@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Light Mode Default */
+    --color-bg-base: #f8fafc;
+    --color-bg-surface: #ffffff;
+    --color-border-base: #e2e8f0;
+    --color-text-main: #334155;
+    --color-text-header: #0f172a;
+    --color-text-muted: #64748b;
+    --color-chip-bg: #e2e8f0;
+    --color-chip-border: #cbd5e1;
+    --color-chip-text: #475569;
+    --color-glass-border: rgba(0, 0, 0, 0.05);
+  }
+
+  :root.dark {
+    /* Dark Mode */
+    --color-bg-base: #151619;
+    --color-bg-surface: #1e1f22;
+    --color-border-base: #2b2d31;
+    --color-text-main: #e2e8f0;
+    --color-text-header: #ffffff;
+    --color-text-muted: #94a3b8;
+    --color-chip-bg: #374151;
+    --color-chip-border: #4b5563;
+    --color-chip-text: #cbd5e1;
+    --color-glass-border: rgba(255, 255, 255, 0.05);
+  }
+}
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  
+  --color-brand-50: #eef7ff;
+  --color-brand-100: #d9edff;
+  --color-brand-200: #bce0ff;
+  --color-brand-300: #8ecfff;
+  --color-brand-400: #58b4ff;
+  --color-brand-500: #2d9cff;
+  --color-brand-600: #1a7ae5;
+  --color-brand-700: #1461ba;
+  --color-brand-800: #165096;
+  --color-brand-900: #184478;
+
+  --color-dark-bg: var(--color-bg-base);
+  --color-dark-surface: var(--color-bg-surface);
+  --color-dark-border: var(--color-border-base);
+  
+  --color-text-main: var(--color-text-main);
+  --color-text-header: var(--color-text-header);
+  --color-text-muted: var(--color-text-muted);
+}
+
+@layer base {
+  body {
+    @apply bg-dark-bg text-text-main font-sans antialiased transition-colors duration-300;
+  }
+  
+  /* Hide scrollbars globally */
+  * {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display font-bold tracking-tight text-text-header;
+  }
+}
+
+.glass-card {
+  @apply bg-dark-surface/80 backdrop-blur-md border border-[var(--color-glass-border)] shadow-xl;
+}
+
+.sidebar-item-active {
+  @apply bg-brand-500/10 text-brand-600 border-r-4 border-brand-500;
+}

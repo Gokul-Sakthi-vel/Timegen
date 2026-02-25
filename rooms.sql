@@ -1,0 +1,6 @@
+CREATE TABLE rooms (
+  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  name TEXT,
+  type TEXT,
+  capacity INTEGER
+);
