@@ -1,25 +1,31 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { Card, Button, Badge, cn } from '../components/UI';
-import { ArrowLeft, Save, RotateCcw, Download } from 'lucide-react';
+import { Card, Button, Badge, cn, ErrorModal } from '../components/UI';
+import { ArrowLeft, Save, RotateCcw, Download, MessageCircle } from 'lucide-react';
 import { ScheduleSlot } from '../types';
 import { buildTimeline, formatTimeRange, TimelineEntry } from '../utils/schedule';
+import { motion, AnimatePresence } from 'framer-motion';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Subject card colour → solid hex approximation for print/border */
-const COLOR_MAP: Record<string, string> = {
-  'bg-blue-500': '#3b82f6',
-  'bg-emerald-500': '#10b981',
-  'bg-amber-500': '#f59e0b',
-  'bg-purple-500': '#a855f7',
-  'bg-rose-500': '#f43f5e',
-  'bg-slate-500': '#64748b',
+const TIMETABLE_COLORS = [
+  { bg: "rgba(59, 130, 246, 0.12)", border: "rgba(59, 130, 246, 0.3)", text: "#60A5FA" }, // Blue
+  { bg: "rgba(16, 185, 129, 0.12)", border: "rgba(16, 185, 129, 0.3)", text: "#34D399" }, // Green
+  { bg: "rgba(245, 158, 11, 0.12)", border: "rgba(245, 158, 11, 0.3)", text: "#FBBF24" }, // Orange
+  { bg: "rgba(139, 92, 246, 0.12)", border: "rgba(139, 92, 246, 0.3)", text: "#A78BFA" }, // Purple
+  { bg: "rgba(6, 182, 212, 0.12)",  border: "rgba(6, 182, 212, 0.3)",  text: "#22D3EE" }, // Cyan
+  { bg: "rgba(236, 72, 153, 0.12)", border: "rgba(236, 72, 153, 0.3)", text: "#F472B6" }, // Pink
+  { bg: "rgba(20, 184, 166, 0.12)", border: "rgba(20, 184, 166, 0.3)", text: "#2DD4BF" }, // Teal
+  { bg: "rgba(99, 102, 241, 0.12)", border: "rgba(99, 102, 241, 0.3)", text: "#818CF8" }, // Indigo
+  { bg: "rgba(107, 114, 128, 0.12)", border: "rgba(107, 114, 128, 0.3)", text: "#9CA3AF" }, // Slate
+  { bg: "rgba(244, 63, 94, 0.12)",  border: "rgba(244, 63, 94, 0.3)",  text: "#FB7185" }, // Rose
+];
+
+const getSubjectStyles = (id: string = '') => {
+  const hash = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return TIMETABLE_COLORS[hash % TIMETABLE_COLORS.length];
 };
-const toHex = (cls: string) => COLOR_MAP[cls] ?? '#6366f1';
 
-// ─── Component ────────────────────────────────────────────────────────────────
 
 type DragSource = { classId: string; day: string; time: string };
 
@@ -34,7 +40,53 @@ export default function ScheduleView() {
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [hoveredPos, setHoveredPos] = useState<{ day: string; time: string } | null>(null);
   const timetableRef = useRef<HTMLDivElement>(null);
+
+  const [errorModal, setErrorModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'error' | 'offline' | 'session';
+    onRetry?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'error'
+  });
+
+  const handleError = (err: any, retryFn?: () => void) => {
+    const isOffline = !navigator.onLine || err.message?.toLowerCase().includes('failed to fetch');
+    const isUnauthorized = err.message?.includes('401') || err.message?.toLowerCase().includes('unauthorized');
+
+    if (isOffline) {
+      setErrorModal({
+        isOpen: true,
+        title: "You're offline",
+        message: "Please check your internet connection and try again.",
+        type: 'offline',
+        onRetry: retryFn
+      });
+    } else if (isUnauthorized) {
+      setErrorModal({
+        isOpen: true,
+        title: "Session expired",
+        message: "Your session has expired. Please login again to continue.",
+        type: 'session',
+        onRetry: () => navigate('/login')
+      });
+    } else {
+      setErrorModal({
+        isOpen: true,
+        title: "Something went wrong",
+        message: "We encountered an unexpected error. Please try again later.",
+        type: 'error',
+        onRetry: retryFn
+      });
+    }
+  };
 
   useEffect(() => {
     if (timetable) {
@@ -45,9 +97,9 @@ export default function ScheduleView() {
 
   if (!timetable) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <h2 className="text-2xl font-bold text-text-header">Timetable not found</h2>
-        <Button onClick={() => navigate('/view-timetable')}>Back to List</Button>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 24px', gap: 16 }}>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>Timetable not found</h2>
+        <button className="btn btn-primary" onClick={() => navigate('/view-timetable')}>Back to List</button>
       </div>
     );
   }
@@ -56,13 +108,25 @@ export default function ScheduleView() {
   const { workingDays, startTime, endTime, periodDuration } = activeSettings;
   const timeline = useMemo(() => buildTimeline(activeSettings), [activeSettings]);
 
-  // Only period entries (non-break)
   const periodEntries = timeline.filter(e => e.type === 'period') as Extract<TimelineEntry, { type: 'period' }>[];
 
   const getSlot = (classId: string, day: string, time: string) =>
     editableSchedule.find(s => s.classId === classId && s.day === day && s.time === time);
 
-  // ── Drag & Drop ────────────────────────────────────────────────────────────
+  const conflictsMap = useMemo(() => {
+    const res: Record<string, string[]> = {}; 
+    editableSchedule.forEach(s => {
+      const key = `${s.day}-${s.time}`;
+      if (!res[key]) {
+        const sameTimeSlots = editableSchedule.filter(ts => ts.day === s.day && ts.time === s.time);
+        const counts: Record<string, number> = {};
+        sameTimeSlots.forEach(ts => counts[ts.facultyId] = (counts[ts.facultyId] || 0) + 1);
+        res[key] = Object.keys(counts).filter(fid => counts[fid] > 1);
+      }
+    });
+    return res;
+  }, [editableSchedule]);
+
   const moveOrSwapSlot = (classId: string, targetDay: string, targetTime: string) => {
     if (!dragSource || dragSource.classId !== classId) return;
     if (dragSource.day === targetDay && dragSource.time === targetTime) return;
@@ -99,9 +163,8 @@ export default function ScheduleView() {
     try {
       await updateTimetable(id, editableSchedule);
       setHasChanges(false);
-      window.alert('Timetable saved successfully.');
-    } catch {
-      window.alert('Could not save timetable changes to backend.');
+    } catch (err: any) {
+      handleError(err, handleSave);
     } finally {
       setIsSaving(false);
     }
@@ -112,166 +175,236 @@ export default function ScheduleView() {
     setHasChanges(false);
   };
 
-  const handleDownload = () => {
-    if (!timetableRef.current) return;
+  const handleDownload = async () => {
+    const element = document.getElementById("timetable-export");
+    if (!element) return;
     setIsDownloading(true);
-
     try {
-      // Collect all <style> and <link rel="stylesheet"> from the current page
-      const styleSheets = Array.from(document.styleSheets)
-        .map(sheet => {
-          try {
-            return Array.from(sheet.cssRules).map(r => r.cssText).join('\n');
-          } catch {
-            // Cross-origin sheet — link to it instead
-            return sheet.href ? `@import url('${sheet.href}');` : '';
-          }
-        })
-        .join('\n');
-
-      const html = timetableRef.current.outerHTML;
-
-      const printWindow = window.open('', '_blank', 'width=1400,height=900');
-      if (!printWindow) {
-        alert('Pop-up blocked — please allow pop-ups for this site and try again.');
-        return;
-      }
-
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8" />
-          <title>${timetable.name}</title>
-          <style>
-            /* Capture all app styles */
-            ${styleSheets}
-            /* Print overrides */
-            @media print {
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            }
-            body {
-              margin: 0;
-              padding: 24px;
-              background: #0f1117;
-              color: #e2e8f0;
-              font-family: Inter, system-ui, sans-serif;
-            }
-          </style>
-        </head>
-        <body>
-          ${html}
-          <script>
-            window.onload = function() {
-              setTimeout(function() { window.print(); }, 500);
-            };
-          <\/script>
-        </body>
-        </html>
-      `);
-      printWindow.document.close();
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: 'var(--timetable-bg)',
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight
+      });
+      const link = document.createElement('a');
+      link.download = `${timetable.name}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
     } catch (err) {
-      console.error('Download failed:', err);
-      // Ultimate fallback
-      window.print();
+      console.error('Image Export Failed:', err);
     } finally {
       setIsDownloading(false);
     }
   };
 
-  // ── Render one timetable table per class ──────────────────────────────────
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById("timetable-export");
+    if (!element) return;
+    setIsDownloadingPDF(true);
+
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+      
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: 'var(--timetable-bg)',
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("l", "mm", "a4");
+      
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`${timetable.name}.pdf`);
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+    } finally {
+      setIsDownloadingPDF(false);
+    }
+  };
+
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const scaledWrapperRef = React.useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [contentHeight, setContentHeight] = useState<number | undefined>(undefined);
+
+  React.useEffect(() => {
+    const updateScale = () => {
+      if (containerRef.current) {
+        const exportEl = document.getElementById('timetable-export');
+        if (exportEl) {
+          const contentWidth = exportEl.scrollWidth;
+          const containerWidth = containerRef.current.offsetWidth - 32; // padding
+          const newScale = contentWidth > containerWidth ? containerWidth / contentWidth : 1;
+          setScale(newScale);
+          const rawHeight = exportEl.scrollHeight;
+          setContentHeight(rawHeight * newScale);
+        }
+      }
+    };
+
+    const raf = requestAnimationFrame(() => updateScale());
+    window.addEventListener('resize', updateScale);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', updateScale);
+    };
+  }, [editableSchedule]);
+
   return (
-    <div className="space-y-8">
-      {/* ── Header ── */}
-      <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             onClick={() => navigate('/view-timetable')}
-            className="p-3 bg-dark-surface border border-dark-border hover:bg-white/5 rounded-2xl transition-all text-slate-400 hover:text-text-header"
+            style={{ width: 34, height: 34, borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--surface-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft style={{ width: 16, height: 16 }} />
           </button>
           <div>
-            <h1 className="text-2xl md:text-3xl font-display font-bold text-text-header">{timetable.name}</h1>
-            <p className="text-sm text-slate-400">
-              {new Date(timetable.createdAt).toLocaleDateString()} &nbsp;·&nbsp;
-              {formatTimeRange(startTime, endTime)} &nbsp;·&nbsp; {periodDuration} min / period
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>{timetable.name}</h1>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '1px 0 0' }}>
+              {formatTimeRange(startTime, endTime)} &nbsp;·&nbsp; {periodDuration}m
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            icon={Download}
-            onClick={handleDownload}
-            disabled={isDownloading}
-          >
-            {isDownloading ? 'Generating…' : 'Download PNG'}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <Button variant="outline" size="sm" style={{ borderRadius: 999 }} onClick={handleDownload} disabled={isDownloading}>
+            <Download style={{ width: 14, height: 14 }} /> PNG
           </Button>
-          <Button variant="outline" icon={RotateCcw} onClick={handleReset} disabled={!hasChanges || isSaving}>Reset</Button>
-          <Button icon={Save} onClick={handleSave} disabled={!hasChanges || isSaving}>
-            {isSaving ? 'Saving…' : 'Save Changes'}
+          <Button variant="outline" size="sm" style={{ borderRadius: 999 }} onClick={handleDownloadPDF} disabled={isDownloadingPDF}>
+            <Download style={{ width: 14, height: 14 }} /> PDF
+          </Button>
+          <Button variant="outline" size="sm" style={{ borderRadius: 999 }} onClick={handleReset} disabled={!hasChanges || isSaving}>
+            <RotateCcw style={{ width: 14, height: 14 }} /> Reset
+          </Button>
+          <Button variant="primary" size="sm" style={{ borderRadius: 999 }} onClick={handleSave} disabled={!hasChanges || isSaving}>
+            <Save style={{ width: 14, height: 14 }} /> {isSaving ? 'Saving…' : 'Save'}
           </Button>
         </div>
       </header>
 
-      {/* ── One grid per class — captured by html2canvas ── */}
-      <div ref={timetableRef} className="space-y-8 bg-dark-bg p-6 rounded-3xl">
-        {classes.map(cls => {
-          // Collect all subjects used by this class in this timetable
+      <div 
+        ref={containerRef}
+        style={{ 
+          width: '100%', 
+          overflow: 'hidden', 
+          background: 'var(--surface-2)',
+          borderRadius: 16,
+          border: '1.5px solid var(--border)',
+          padding: '12px',
+          height: contentHeight ? contentHeight + 36 : 'auto'
+        }}
+      >
+        <div 
+          ref={scaledWrapperRef}
+          style={{ 
+            transform: `scale(${scale})`, 
+            transformOrigin: 'top left',
+            width: scale < 1 ? `${100 / scale}%` : 'max-content',
+          }}
+        >
+          <div 
+            id="timetable-export" 
+            style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: 20, 
+              background: 'var(--timetable-bg)', 
+              width: 'max-content',
+              minWidth: 700,
+              padding: '24px',
+              borderRadius: 14,
+            }}
+          >
+            {classes
+              .filter(cls => editableSchedule.some(s => s.classId === cls.id))
+              .map(cls => {
           const classSlots = editableSchedule.filter(s => s.classId === cls.id);
           const usedSubjectIds = [...new Set(classSlots.map(s => s.subjectId))];
           const usedSubjects = usedSubjectIds.map(sid => subjects.find(s => s.id === sid)).filter(Boolean) as typeof subjects;
 
           return (
-            <div key={cls.id} className="space-y-4">
-              {/* ── Title bar ── */}
-              <div className="flex items-center gap-3 px-1">
-                <div className="h-8 w-1 rounded-full bg-brand-500" />
-                <h2 className="text-xl font-bold text-text-header">Class {cls.name}</h2>
+            <div key={cls.id} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 4, height: 28, borderRadius: 999, background: 'var(--accent)', flexShrink: 0 }} />
+                <h2 style={{ fontSize: '1.125rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Class {cls.name}</h2>
               </div>
 
-              {/* ── Main timetable grid ── */}
-              <div className="bg-dark-surface rounded-3xl border border-dark-border shadow-xl overflow-hidden">
+              <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm" style={{ minWidth: '700px' }}>
-                    {/* ── Column headers ── */}
                     <thead>
-                      <tr className="border-b border-dark-border">
-                        {/* Day label column */}
-                        <th className="px-4 py-3 text-left border-r border-dark-border bg-dark-bg/60 min-w-[110px]">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Day</div>
-                          <div className="text-[10px] text-slate-600 mt-0.5">Hour Order</div>
+                      <tr style={{ borderBottom: '1.5px solid var(--border)', background: 'var(--surface-2)' }}>
+                        <th style={{ 
+                          padding: '8px 10px', 
+                          textAlign: 'left', 
+                          borderRight: '1.5px solid var(--border)', 
+                          minWidth: 80, 
+                          background: 'var(--surface-2)',
+                          position: 'sticky',
+                          left: 0,
+                          zIndex: 10
+                        }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>TIMELINE</div>
+                          <div style={{ fontSize: '0.6rem', color: 'var(--text-placeholder)', marginTop: 2 }}>Days \ Periods</div>
                         </th>
 
-                        {/* Period + break columns */}
                         {timeline.map((entry, idx) => {
                           const isBreak = entry.type === 'break';
+                          const isHoveredCol = hoveredPos?.time === entry.start;
                           return (
                             <th
                               key={`th-${idx}`}
-                              className={cn(
-                                'border-r border-dark-border text-center',
-                                isBreak
-                                  ? 'bg-amber-950/50 px-2 py-3 min-w-[90px]'
-                                  : 'bg-dark-bg/40 px-4 py-3 min-w-[140px]'
-                              )}
+                              style={{
+                                padding: isBreak ? '8px 6px' : '8px 10px',
+                                textAlign: 'center',
+                                borderRight: '1.5px solid var(--border)',
+                                background: isHoveredCol ? 'var(--accent-muted)' : isBreak ? 'var(--break-bg)' : 'var(--surface-2)',
+                                minWidth: isBreak ? 70 : 115,
+                                transition: 'background 0.2s',
+                              }}
                             >
                               {isBreak ? (
                                 <>
-                                  <div className="text-[9px] font-bold text-amber-400 uppercase tracking-widest">
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 700, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                                     {entry.name}
                                   </div>
-                                  <div className="text-[10px] text-amber-500/70 mt-0.5">
+                                  <div style={{ fontSize: '0.65rem', color: '#92400E', marginTop: 1, opacity: 0.7 }}>
                                     {formatTimeRange(entry.start, entry.end)}
                                   </div>
                                 </>
                               ) : (
                                 <>
-                                  <div className="text-base font-bold text-text-header">
+                                  <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                                     {(entry as Extract<TimelineEntry, { type: 'period' }>).order}
                                   </div>
-                                  <div className="text-[10px] text-slate-400 mt-0.5">
+                                  <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1 }}>
                                     {formatTimeRange(entry.start, entry.end)}
                                   </div>
                                 </>
@@ -282,24 +415,21 @@ export default function ScheduleView() {
                       </tr>
                     </thead>
 
-                    {/* ── Rows (one per working day) ── */}
                     <tbody>
                       {workingDays.map((day, dayIdx) => {
-                        // Build cells with lab merging logic
                         const cells: React.ReactNode[] = [];
                         let i = 0;
 
                         while (i < timeline.length) {
                           const entry = timeline[i];
 
-                          // Break column
                           if (entry.type === 'break') {
                             cells.push(
                               <td
                                 key={`${day}-brk-${i}`}
-                                className="border-r border-dark-border bg-amber-950/20 text-center px-1 py-2"
+                                style={{ borderRight: '1.5px solid var(--border)', background: 'var(--break-bg)', textAlign: 'center', padding: '6px 4px' }}
                               >
-                                <span className="inline-block px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20">
+                                <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 6, fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--break-text)', background: 'var(--break-tag-bg)', border: '1px solid var(--break-tag-border)' }}>
                                   {entry.name}
                                 </span>
                               </td>
@@ -308,12 +438,12 @@ export default function ScheduleView() {
                             continue;
                           }
 
-                          // Period entry — check for lab merge
                           const slot = getSlot(cls.id, day, entry.start);
                           const subject = subjects.find(s => s.id === slot?.subjectId);
                           const isLab = subject?.subjectType === 'Laboratory';
 
-                          // Look ahead: next timeline entry is also a period with same lab subject?
+                          const isConflict = slot && (conflictsMap[`${day}-${entry.start}`] || []).includes(slot.facultyId);
+
                           const nextEntry = timeline[i + 1];
                           const nextIsTeachingPeriod = nextEntry?.type === 'period';
                           const nextSlot = nextIsTeachingPeriod
@@ -327,53 +457,69 @@ export default function ScheduleView() {
                           const colSpan = isMerged ? 2 : 1;
                           const prof = faculty.find(f => f.id === slot?.facultyId);
                           const room = rooms.find(r => r.id === slot?.roomId);
-                          const color = subject?.color ?? 'bg-slate-500';
-                          const hex = toHex(color);
+                          const styles = getSubjectStyles(subject?.id);
+                          const isHoveredRow = hoveredPos?.day === day;
+                          const isHoveredCol = hoveredPos?.time === entry.start;
+                          const isCurrentlyHovered = isHoveredRow && isHoveredCol;
 
                           cells.push(
                             <td
                               key={`${day}-${entry.start}`}
                               colSpan={colSpan}
-                              className="border-r border-dark-border p-1.5 align-top"
+                              style={{ 
+                                borderRight: '1px solid var(--border)', 
+                                padding: 6, 
+                                verticalAlign: 'top',
+                                background: isCurrentlyHovered ? 'var(--accent-muted)' : (isHoveredRow || isHoveredCol) ? 'rgba(0,0,0,0.02)' : 'transparent',
+                                transition: 'all 0.15s ease',
+                              }}
                               onDragOver={e => e.preventDefault()}
                               onDrop={() => !isMerged && moveOrSwapSlot(cls.id, day, entry.start)}
+                              onMouseEnter={() => setHoveredPos({ day, time: entry.start })}
+                              onMouseLeave={() => setHoveredPos(null)}
                             >
                               {slot && subject ? (
                                 <div
                                   draggable
                                   onDragStart={() => setDragSource({ classId: cls.id, day, time: entry.start })}
                                   onDragEnd={() => setDragSource(null)}
+                                  title={`Subject: ${subject.name}\nFaculty: ${prof?.name ?? 'Unassigned'}\nRoom: ${room?.name ?? 'Unassigned'}${isConflict ? '\n⚠️ CONFLICT: Faculty double-booked!' : ''}`}
                                   style={{
-                                    borderLeft: `3px solid ${hex}`,
-                                    background: `${hex}18`,
+                                    border: isConflict ? '2px solid #ef4444' : `1.5px solid ${styles.border}`,
+                                    borderLeftWidth: isConflict ? 2 : 5,
+                                    background: isConflict ? '#fef2f2' : (isCurrentlyHovered ? styles.bg : 'var(--surface)'),
+                                    borderRadius: 12,
+                                    padding: '8px',
+                                    cursor: 'move',
+                                    minHeight: 70,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between',
+                                    boxShadow: isCurrentlyHovered ? '0 8px 16px rgba(0,0,0,0.1)' : 'none',
+                                    transform: isCurrentlyHovered ? 'scale(1.02)' : 'scale(1)',
+                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    opacity: isCurrentlyHovered ? 1 : 0.9,
                                   }}
-                                  className="rounded-xl px-3 py-2.5 cursor-move min-h-[88px] flex flex-col justify-between hover:brightness-110 transition-all"
                                 >
                                   <div>
-                                    <div className="flex items-center justify-between gap-1 mb-1">
-                                      <span
-                                        className="text-[11px] font-black uppercase tracking-wide"
-                                        style={{ color: hex }}
-                                      >
-                                        {subject.code || subject.name}
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 6 }}>
+                                      <span style={{ fontSize: '0.75rem', fontWeight: 900, color: isConflict ? '#b91c1c' : styles.text, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                        {subject.code || subject.name.slice(0, 8)}
                                       </span>
                                       {isLab && (
-                                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
-                                          style={{ background: `${hex}30`, color: hex }}>
-                                          LAB
-                                        </span>
+                                        <Badge variant="info" style={{ fontSize: '0.6rem', padding: '1px 4px' }}>LAB</Badge>
                                       )}
                                     </div>
-                                    <p className="text-[11px] text-slate-300 leading-snug">{subject.name}</p>
+                                    <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3, margin: 0 }}>{subject.name}</h4>
                                   </div>
-                                  <div className="mt-2 space-y-0.5">
-                                    <p className="text-[10px] text-slate-400 truncate">{prof?.name ?? '—'}</p>
-                                    <p className="text-[10px] text-slate-500 truncate">{room?.name ?? '—'}</p>
+                                  <div style={{ marginTop: 8, padding: 0, borderTop: '1px solid rgba(0,0,0,0.03)' }}>
+                                    <p style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', margin: '8px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prof?.name ?? '—'}</p>
+                                    <p style={{ fontSize: '0.65rem', color: 'var(--text-placeholder)', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room?.name ?? '—'}</p>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="min-h-[88px] rounded-xl border border-dashed border-dark-border/60 bg-dark-bg/30 flex items-center justify-center">
-                                  <span className="text-[11px] text-slate-600">Free</span>
+                                <div style={{ minHeight: 70, borderRadius: 10, border: '1.5px dashed var(--border)', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-placeholder)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Free</span>
                                 </div>
                               )}
                             </td>
@@ -385,15 +531,23 @@ export default function ScheduleView() {
                         return (
                           <tr
                             key={`${cls.id}-${day}`}
-                            className={cn(
-                              'border-b border-dark-border/70',
-                              dayIdx % 2 === 0 ? 'bg-dark-bg/10' : 'bg-dark-surface/60'
-                            )}
+                            style={{ 
+                              borderBottom: '1px solid var(--border)', 
+                              background: hoveredPos?.day === day ? 'var(--accent-muted)' : (dayIdx % 2 === 0 ? 'var(--surface)' : 'var(--surface-2)'),
+                              transition: 'background 0.2s',
+                            }}
                           >
-                            {/* Day label cell */}
-                            <td className="px-4 py-3 border-r border-dark-border bg-dark-bg/40">
-                              <span className="text-sm font-bold text-text-main block">{day.slice(0, 3).toUpperCase()}</span>
-                              <span className="text-[10px] text-slate-500">DAY {dayIdx + 1}</span>
+                            <td style={{ 
+                              padding: '8px 10px', 
+                              borderRight: '1.5px solid var(--border)', 
+                              background: hoveredPos?.day === day ? 'var(--accent-muted)' : 'var(--surface-2)',
+                              position: 'sticky',
+                              left: 0,
+                              zIndex: 10,
+                              transition: 'background 0.2s'
+                            }}>
+                              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>{day.slice(0, 3).toUpperCase()}</span>
+                              <span style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Day {dayIdx + 1}</span>
                             </td>
                             {cells}
                           </tr>
@@ -404,53 +558,40 @@ export default function ScheduleView() {
                 </div>
               </div>
 
-              {/* ── Subject Legend Table (matches reference picture) ── */}
               {usedSubjects.length > 0 && (
-                <div className="bg-dark-surface rounded-3xl border border-dark-border shadow-xl overflow-hidden">
-                  <div className="px-6 py-4 border-b border-dark-border bg-dark-bg/40">
-                    <h3 className="text-sm font-bold text-text-header">Subject Index — Class {cls.name}</h3>
+                <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+                  <div style={{ padding: '12px 16px', borderBottom: '1.5px solid var(--border)', background: 'var(--surface-2)' }}>
+                    <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Subject Index — Class {cls.name}</h3>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-xs">
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="data-table" style={{ fontSize: '0.8rem' }}>
                       <thead>
-                        <tr className="border-b border-dark-border bg-dark-bg/60">
-                          {['ABB', 'Course Code', 'Course Name', 'Credit', 'Periods', 'Category', 'Faculty'].map(h => (
-                            <th key={h} className="px-5 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-dark-border last:border-0">
-                              {h}
-                            </th>
+                        <tr>
+                          {['ABB', 'Course Code', 'Course Name', 'Credits', 'Periods', 'Category', 'Faculty'].map(h => (
+                            <th key={h}>{h}</th>
                           ))}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-dark-border">
+                      <tbody>
                         {usedSubjects.map(subject => {
-                          const hex = toHex(subject.color ?? 'bg-slate-500');
-                          // Find faculty who teach this subject
+                          const styles = getSubjectStyles(subject.id);
                           const facList = faculty.filter(f => f.subjects.includes(subject.id));
                           const weeklyCount = classSlots.filter(s => s.subjectId === subject.id).length;
 
                           return (
-                            <tr key={subject.id} className="hover:bg-white/[0.02] transition-colors">
-                              <td className="px-5 py-3 border-r border-dark-border">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: hex }} />
-                                  <span className="font-black text-text-header uppercase" style={{ color: hex }}>
+                            <tr key={subject.id}>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ fontWeight: 900, color: styles.text, textTransform: 'uppercase', fontSize: '0.8rem', background: styles.bg, padding: '2px 6px', borderRadius: 4, border: `1px solid ${styles.border}` }}>
                                     {subject.code || subject.name.slice(0, 4).toUpperCase()}
                                   </span>
                                 </div>
                               </td>
-                              <td className="px-5 py-3 border-r border-dark-border font-mono text-slate-400">
-                                {subject.code || '—'}
-                              </td>
-                              <td className="px-5 py-3 border-r border-dark-border text-text-main font-medium">
-                                {subject.name}
-                              </td>
-                              <td className="px-5 py-3 border-r border-dark-border text-center text-slate-400">
-                                {subject.hours}
-                              </td>
-                              <td className="px-5 py-3 border-r border-dark-border text-center text-slate-400">
-                                {weeklyCount}
-                              </td>
-                              <td className="px-5 py-3 border-r border-dark-border">
+                              <td style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{subject.code || '—'}</td>
+                              <td style={{ fontWeight: 500 }}>{subject.name}</td>
+                              <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{subject.credits ?? 0}</td>
+                              <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{weeklyCount}</td>
+                              <td>
                                 <Badge
                                   variant={
                                     subject.subjectType === 'Laboratory' ? 'info'
@@ -458,17 +599,30 @@ export default function ScheduleView() {
                                         : 'neutral'
                                   }
                                 >
-                                  {subject.subjectType === 'Laboratory'
-                                    ? 'Practical'
-                                    : subject.subjectType === 'Tutorial'
-                                      ? 'Tutorial'
-                                      : 'Theory'}
+                                  {subject.subjectType === 'Laboratory' ? 'Practical' : subject.subjectType === 'Tutorial' ? 'Tutorial' : 'Theory'}
                                 </Badge>
                               </td>
-                              <td className="px-5 py-3 text-slate-400">
-                                {facList.length > 0
-                                  ? facList.map(f => f.name).join(', ')
-                                  : '—'}
+                              <td style={{ color: 'var(--text-secondary)' }}>
+                                {facList.length > 0 ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    {facList.map((f, i) => (
+                                      <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        {f.name}
+                                        {f.phone && (
+                                          <a
+                                            href={`https://wa.me/${f.phone.replace(/[^0-9]/g, '')}`}
+                                            target="_blank" rel="noopener noreferrer"
+                                            title={`Message ${f.name} on WhatsApp`}
+                                            style={{ color: '#25D366', display: 'flex', alignItems: 'center' }}
+                                          >
+                                            <MessageCircle style={{ width: 14, height: 14 }} />
+                                          </a>
+                                        )}
+                                        {i < facList.length - 1 && <span>,</span>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : '—'}
                               </td>
                             </tr>
                           );
@@ -476,12 +630,45 @@ export default function ScheduleView() {
                       </tbody>
                     </table>
                   </div>
+                  
+                  <div style={{ marginTop: 24, padding: '16px 20px', background: 'var(--surface-2)', borderRadius: 12, border: '1.5px solid var(--border)' }}>
+                    <p style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 12, letterSpacing: '0.04em' }}>
+                      Subject Color Legend
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                      {usedSubjects.map(subject => {
+                        const styles = getSubjectStyles(subject.id);
+                        return (
+                          <div key={subject.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 12, height: 12, borderRadius: 3, background: styles.bg, border: `1px solid ${styles.border}` }} />
+                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>{subject.code || subject.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           );
         })}
+            <div style={{ marginTop: 12, textAlign: 'center', opacity: 0.5, paddingBottom: 8 }}>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                Generated timetable • Optimized using constraints
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        title={errorModal.title}
+        message={errorModal.message}
+        type={errorModal.type}
+        onRetry={errorModal.onRetry}
+        onClose={() => setErrorModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

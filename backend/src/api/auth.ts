@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import express from "express";
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { supabase } from '../supabase';
 
@@ -25,7 +25,7 @@ const verifyPassword = (password: string, stored: string) => {
   return timingSafeEqual(originalHash, calculatedHash);
 };
 
-export const signup = async (req: Request, res: Response) => {
+export const signup = async (req: express.Request, res: express.Response) => {
   const { name, email, password } = req.body as {
     name?: string;
     email?: string;
@@ -71,7 +71,7 @@ export const signup = async (req: Request, res: Response) => {
   return res.status(201).json(data);
 };
 
-export const login = async (req: Request, res: Response) => {
+export const login = async (req: express.Request, res: express.Response) => {
   const { email, password } = req.body as {
     email?: string;
     password?: string;
@@ -98,4 +98,41 @@ export const login = async (req: Request, res: Response) => {
   }
 
   return res.json({ id: data.id, name: data.name, email: data.email });
+};
+
+export const updateProfile = async (req: any, res: express.Response) => {
+  const { name } = req.body as { name?: string };
+  const userEmail = req.userEmail;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Name is required' });
+  }
+
+  if (!userEmail) {
+    return res.status(401).json({ error: 'User email not found in session' });
+  }
+
+  // Use email to update since Supabase Auth IDs might not match public.users serial IDs
+  const { data, error } = await supabase
+    .from('users')
+    .update({ name })
+    .eq('email', userEmail.toLowerCase().trim())
+    .select('id, name, email')
+    .single();
+
+  if (error) {
+    // If not found (new Supabase user), create the record
+    const { data: newData, error: insertError } = await supabase
+      .from('users')
+      .insert([{ name, email: userEmail.toLowerCase().trim() }])
+      .select('id, name, email')
+      .single();
+
+    if (insertError) {
+      return res.status(500).json({ error: insertError.message });
+    }
+    return res.json(newData);
+  }
+
+  return res.json(data);
 };

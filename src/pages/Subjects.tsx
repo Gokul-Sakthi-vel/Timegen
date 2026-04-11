@@ -1,413 +1,579 @@
-import React, { useState } from 'react';
-import { Card, Button, Badge, EmptyState, Modal } from '../components/UI';
-import { BookOpen, Plus, Edit2, Trash2, Search, Minus, Plus as PlusSmall, Lock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal } from '../components/UI';
+import { BookOpen, Plus, Edit2, Trash2, Search, Minus, Lock, MoreVertical, Check, Square, CheckSquare, Clock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useSelection } from '../hooks/useSelection';
 import { Subject, Priority, SubjectType } from '../types';
 
 const FIXED_KEYWORDS = ['library', 'nptel', 'tws', 'placement'];
 const isAutoFixed = (name: string) => FIXED_KEYWORDS.some(kw => name.toLowerCase().includes(kw));
 
+function StepperInput({
+  value, onChange, min = 1, max = 20, name
+}: { value: number; onChange: (v: number) => void; min?: number; max?: number; name?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <button type="button" className="stepper-btn" onClick={() => onChange(Math.max(min, value - 1))}>
+        <Minus style={{ width: 14, height: 14 }} />
+      </button>
+      <input
+        name={name}
+        type="number" min={min} max={max}
+        value={value}
+        onChange={e => onChange(Math.max(min, Number(e.target.value) || min))}
+        className="field-input"
+        style={{ textAlign: 'center', flex: 1 }}
+      />
+      <button type="button" className="stepper-btn" onClick={() => onChange(Math.min(max, value + 1))}>
+        <Plus style={{ width: 14, height: 14 }} />
+      </button>
+    </div>
+  );
+}
+
 export default function Subjects() {
-  const { subjects, addSubject, updateSubject, deleteSubject } = useApp();
+  const { subjects, addSubject, updateSubject, deleteSubject, deleteSubjects } = useApp();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const {
+    selectedIds, isSelected, toggleItem,
+    selectAll, deselectAll, count,
+    isSelectionMode, exitSelectionMode, selectSingle
+  } = useSelection(subjects);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    onConfirm: () => void;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    onConfirm: () => { },
+    title: '',
+    message: ''
+  });
+
+  const [errorModal, setErrorModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'error' | 'offline' | 'session';
+    onRetry?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'error'
+  });
+
+  const navigate = useNavigate();
+
+  const handleError = (err: any, retryFn?: () => void) => {
+    const isOffline = !navigator.onLine || err.message?.toLowerCase().includes('failed to fetch');
+    const isUnauthorized = err.message?.includes('401') || err.message?.toLowerCase().includes('unauthorized');
+
+    if (isOffline) {
+      setErrorModal({
+        isOpen: true,
+        title: "You're offline",
+        message: "Please check your internet connection and try again.",
+        type: 'offline',
+        onRetry: retryFn
+      });
+    } else if (isUnauthorized) {
+      setErrorModal({
+        isOpen: true,
+        title: "Session expired",
+        message: "Your session has expired. Please login again to continue.",
+        type: 'session',
+        onRetry: () => navigate('/login')
+      });
+    } else {
+      setErrorModal({
+        isOpen: true,
+        title: "Something went wrong",
+        message: "We encountered an unexpected error. Please try again later.",
+        type: 'error',
+        onRetry: retryFn
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveMenuId(null);
+        exitSelectionMode();
+      }
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (activeMenuId && !(e.target as HTMLElement).closest('.subject-menu-container')) {
+        setActiveMenuId(null);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleEsc);
+      window.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [activeMenuId, exitSelectionMode]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [hoursValue, setHoursValue] = useState(4);
   const [creditsValue, setCreditsValue] = useState(3);
   const [weeklyPeriodsValue, setWeeklyPeriodsValue] = useState(4);
   const [isFixedValue, setIsFixedValue] = useState(false);
-
-  const filteredSubjects = subjects.filter(s =>
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.code || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const [subjectTypeFilter, setSubjectTypeFilter] = useState<string>('all');
+  
+  const filteredSubjects = subjects.filter(s => {
+    const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.code || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesFilter = subjectTypeFilter === 'all' || s.subjectType === subjectTypeFilter;
+    return matchesSearch && matchesFilter;
+  });
 
   const handleAdd = () => {
     setEditingSubject(null);
-    setHoursValue(4);
-    setCreditsValue(3);
-    setWeeklyPeriodsValue(4);
-    setIsFixedValue(false);
+    setHoursValue(4); setCreditsValue(3); setWeeklyPeriodsValue(4); setIsFixedValue(false);
     setIsModalOpen(true);
   };
 
   const handleEdit = (subject: Subject) => {
     setEditingSubject(subject);
     setHoursValue(subject.hours);
-    setCreditsValue(subject.credits ?? 3);
+    setCreditsValue(subject.credits ?? 0);
     setWeeklyPeriodsValue(subject.weeklyPeriods ?? subject.hours);
     setIsFixedValue(subject.isFixed ?? isAutoFixed(subject.name));
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
     const data = {
       name: formData.get('name') as string,
-      code: formData.get('code') as string,
-      hours: parseInt(formData.get('hours') as string),
+      code: (formData.get('code') as string || '').toUpperCase(),
+      hours: weeklyPeriodsValue,
       credits: creditsValue,
       weeklyPeriods: weeklyPeriodsValue,
       isFixed: isFixedValue,
-      priority: formData.get('priority') as Priority,
-      color: formData.get('color') as string,
-      subjectType: formData.get('subjectType') as SubjectType,
+      priority: (formData.get('priority') as Priority) || 'Medium',
+      color: 'bg-blue-500',
+      subjectType: (formData.get('subjectType') as SubjectType) || 'Theory',
     };
-
     try {
-      if (editingSubject) {
-        await updateSubject(editingSubject.id, data);
-      } else {
-        await addSubject(data);
-      }
+      if (editingSubject) { await updateSubject(editingSubject.id, data); }
+      else { await addSubject(data); }
       setIsModalOpen(false);
-    } catch (error) {
-      console.error('Failed to save subject', error);
-      window.alert('Could not save subject to backend. Please verify backend and Supabase settings.');
+    } catch (err: any) {
+      handleError(err, () => {
+        console.log("Retrying save...");
+      });
     }
   };
 
+  const handleBulkDelete = async () => {
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Subjects',
+      message: `Are you sure you want to delete ${selectedIds.length} subjects? This action cannot be undone.`,
+      onConfirm: async () => {
+        try {
+          await deleteSubjects(selectedIds);
+          exitSelectionMode();
+          setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        } catch (err: any) {
+          handleError(err, handleBulkDelete);
+        }
+      }
+    });
+  };
+
+  const priorityBadge = (p: string) =>
+    p === 'High' ? 'warning' : p === 'Medium' ? 'accent' : 'neutral';
+  const typeBadge = (t: string) =>
+    t === 'Laboratory' ? 'accent' : t === 'Theory with Laboratory' ? 'warning' : t === 'Tutorial' ? 'neutral' : 'neutral';
+
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'center' }}>
+        <BulkActionBar
+          selectedCount={count}
+          onDelete={handleBulkDelete}
+          onCancel={exitSelectionMode}
+          onSelectAll={selectAll}
+          onDeselectAll={deselectAll}
+          itemName="subject"
+        />
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div>
-          <h1 className="text-2xl md:text-3xl font-display font-bold text-text-header">Subjects</h1>
-          <p className="text-sm md:text-base text-slate-500 font-medium">Manage subject configurations and priorities</p>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>Subjects</h1>
+          <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '2px 0 0' }}>Manage subject configurations and priorities</p>
         </div>
-        <Button icon={Plus} onClick={handleAdd} className="w-full md:w-auto whitespace-nowrap shadow-xl shadow-brand-500/20">
-          Add Subject
-        </Button>
-      </header>
-
-      {subjects.length > 0 ? (
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row items-center gap-4 bg-dark-surface p-5 rounded-[2rem] border border-dark-border shadow-xl">
-            <div className="relative flex-1 w-full">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="text"
-                placeholder="Search subjects by name or code..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-5 py-3.5 bg-dark-bg/50 border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main placeholder:text-slate-600 font-medium"
-              />
-            </div>
-          </div>
-
-          {/* Desktop Table */}
-          <div className="hidden md:block">
-            <Card className="p-0 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-dark-bg/50 border-b border-dark-border">
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest w-8"></th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Subject</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Code</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Type</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Credits</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Periods/wk</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Priority</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-dark-border">
-                    {filteredSubjects.map((subject) => (
-                      <tr key={subject.id} className="hover:bg-white/[0.02] transition-colors group">
-                        {/* colour dot */}
-                        <td className="px-4 py-3">
-                          <div className={`w-3 h-3 rounded-full ${subject.color}`} />
-                        </td>
-                        {/* name */}
-                        <td className="px-4 py-3">
-                          <span className="font-bold text-text-main">{subject.name}</span>
-                        </td>
-                        {/* code */}
-                        <td className="px-4 py-3">
-                          <span className="font-mono text-slate-500">{subject.code || '—'}</span>
-                        </td>
-                        {/* type */}
-                        <td className="px-4 py-3">
-                          <Badge variant={
-                            subject.subjectType === 'Laboratory' ? 'info'
-                              : subject.subjectType === 'Theory with Laboratory' ? 'warning'
-                                : subject.subjectType === 'Tutorial' ? 'success'
-                                  : 'neutral'
-                          }>
-                            {subject.subjectType === 'Theory with Laboratory' ? 'Theory+Lab'
-                              : subject.subjectType}
-                          </Badge>
-                        </td>
-                        {/* credits */}
-                        <td className="px-4 py-3 text-center text-slate-400 font-medium">
-                          {subject.credits ?? '—'}
-                        </td>
-                        {/* periods */}
-                        <td className="px-4 py-3 text-center text-slate-400 font-medium">
-                          {subject.weeklyPeriods ?? subject.hours}
-                        </td>
-                        {/* priority + fixed badge */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <Badge variant={
-                              subject.priority === 'High' ? 'danger' :
-                                subject.priority === 'Medium' ? 'warning' : 'info'
-                            }>
-                              {subject.priority}
-                            </Badge>
-                            {(subject.isFixed || isAutoFixed(subject.name)) && (
-                              <Badge variant="neutral" className="flex items-center gap-1">
-                                <Lock className="w-3 h-3" /> Fixed
-                              </Badge>
-                            )}
-                          </div>
-                        </td>
-                        {/* actions */}
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                            <button
-                              onClick={() => handleEdit(subject)}
-                              className="p-2 text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 rounded-xl transition-all"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={async () => {
-                                try { await deleteSubject(subject.id); }
-                                catch { window.alert('Could not delete subject from backend.'); }
-                              }}
-                              className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-
-          </div>
-
-          {/* Mobile Cards */}
-          <div className="grid grid-cols-1 gap-4 md:hidden">
-            {filteredSubjects.map((subject) => (
-              <div key={subject.id}>
-                <Card className="p-6 border-dark-border hover:border-brand-500/30 transition-all">
-                  <div className="flex items-start justify-between mb-5">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-4 h-4 rounded-full ${subject.color} shadow-lg shadow-${subject.color.split('-')[1]}-500/20`} />
-                      <div>
-                        <h3 className="font-bold text-text-header text-lg">{subject.name}</h3>
-                        <p className="text-xs font-mono text-slate-500 font-bold mt-1 uppercase tracking-wider">{subject.code || 'N/A'}</p>
-                        <p className="text-xs text-[var(--color-text-muted)] mt-1 font-medium">{subject.subjectType}</p>
-                      </div>
-                    </div>
-                    <Badge variant={
-                      subject.priority === 'High' ? 'danger' :
-                        subject.priority === 'Medium' ? 'warning' : 'info'
-                    }>
-                      {subject.priority}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between pt-5 border-t border-dark-border">
-                    <span className="text-sm text-slate-400 font-bold uppercase tracking-widest">{subject.hours}h / week</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleEdit(subject)}
-                        className="p-3 text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 rounded-xl transition-all"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            await deleteSubject(subject.id);
-                          } catch (error) {
-                            console.error('Failed to delete subject', error);
-                            window.alert('Could not delete subject from backend.');
-                          }
-                        }}
-                        className="p-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            ))}
-          </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {!isSelectionMode && subjects.length > 0 && (
+            <button
+              className="btn btn-outline"
+              style={{ borderRadius: 999, fontSize: '0.825rem' }}
+              onClick={selectAll}
+            >
+              Select All
+            </button>
+          )}
+          <button className="btn btn-primary" style={{ borderRadius: 999 }} onClick={handleAdd}>
+            <Plus style={{ width: 16, height: 16 }} /> Add Subject
+          </button>
         </div>
-      ) : (
-        <Card>
-          <EmptyState
-            icon={BookOpen}
-            title="No subjects yet"
-            description="Add subjects to your curriculum to start building your timetable."
-            actionLabel="Add First Subject"
-            onAction={handleAdd}
-          />
-        </Card>
+      </div>
+
+      {subjects.length > 0 && (
+        <div className="search-filter-container">
+          <div className="search-input-wrapper">
+            <Search style={{ width: 18, height: 18, color: 'var(--text-secondary)' }} />
+            <input 
+              type="text" 
+              placeholder="Search subjects by name or code…" 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <select 
+            className="filter-select"
+            value={subjectTypeFilter}
+            onChange={e => setSubjectTypeFilter(e.target.value)}
+          >
+            <option value="all">All Types</option>
+            <option value="Theory">Theory</option>
+            <option value="Laboratory">Laboratory</option>
+            <option value="Theory with Laboratory">Theory + Lab</option>
+            <option value="Tutorial">Tutorial</option>
+          </select>
+        </div>
       )}
 
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={editingSubject ? 'Edit Subject' : 'Add New Subject'}
-      >
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <div className="grid grid-cols-2 gap-6">
-            <div className="col-span-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Subject Name</label>
-              <input
-                name="name"
-                defaultValue={editingSubject?.name}
-                required
-                placeholder="e.g. Advanced Mathematics"
-                className="w-full px-5 py-4 bg-dark-bg border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main placeholder:text-slate-700 font-medium"
-              />
+      {subjects.length === 0 ? (
+        <EmptyState
+          icon={BookOpen}
+          title="No subjects yet"
+          description="Add subjects to your curriculum to define requirements before generating the timetable."
+          actionLabel="Add First Subject"
+          onAction={handleAdd}
+        />
+      ) : filteredSubjects.length === 0 ? (
+        <div style={{ padding: '60px 0' }}>
+          <EmptyState 
+            icon={Search} 
+            title="No results found" 
+            description="We couldn't find any subjects matching your current search or filter." 
+            actionLabel="Clear Search" 
+            onAction={() => { setSearchQuery(''); setSubjectTypeFilter('all'); }} 
+          />
+        </div>
+      ) : (
+        <>
+          <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 16, overflow: 'visible', display: 'block' }}
+            className="desktop-table">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Subject</th>
+                  <th>Code</th>
+                  <th>Type</th>
+                  <th style={{ textAlign: 'center' }}>Credits</th>
+                  <th style={{ textAlign: 'center' }}>Periods/wk</th>
+                  <th>Priority</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSubjects.map(subject => (
+                  <tr
+                    key={subject.id}
+                    className={isSelected(subject.id) ? 'selected-row' : ''}
+                    onClick={() => { if (isSelectionMode) toggleItem(subject.id); }}
+                    style={{
+                      cursor: isSelectionMode ? 'pointer' : 'default',
+                      background: isSelected(subject.id) ? 'var(--accent-muted)' : 'transparent',
+                      transition: 'all 0.2s ease',
+                      borderLeft: isSelected(subject.id) ? '4px solid var(--accent)' : '4px solid transparent',
+                    }}
+                  >
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {isSelectionMode && isSelected(subject.id) && (
+                          <div style={{
+                            width: 20, height: 20, borderRadius: 10,
+                            background: 'var(--accent)', color: 'var(--accent-text)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <Check style={{ width: 12, height: 12, strokeWidth: 3 }} />
+                          </div>
+                        )}
+                        <span style={{ fontWeight: 600 }}>{subject.name}</span>
+                      </div>
+                    </td>
+                    <td><span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{subject.code || '—'}</span></td>
+                    <td><Badge variant={typeBadge(subject.subjectType) as any}>{subject.subjectType}</Badge></td>
+                    <td style={{ textAlign: 'center', fontWeight: 600 }}>{subject.credits || 0}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--surface-2)', padding: '2px 8px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 600 }}>
+                        <Clock style={{ width: 12, height: 12 }} />
+                        {subject.weeklyPeriods}
+                      </div>
+                    </td>
+                    <td><Badge variant={priorityBadge(subject.priority) as any}>{subject.priority}</Badge></td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="subject-menu-container" style={{ position: 'relative', display: 'inline-block' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMenuId(activeMenuId === subject.id ? null : subject.id);
+                          }}
+                          className="icon-btn"
+                        >
+                          <MoreVertical style={{ width: 18, height: 18 }} />
+                        </button>
+                        <AnimatePresence>
+                          {activeMenuId === subject.id && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                              transition={{ duration: 0.15, ease: 'easeOut' }}
+                              className="faculty-card-dropdown"
+                              style={{
+                                position: 'absolute', top: '100%', right: 0,
+                                width: 160, background: 'var(--surface)',
+                                border: '1.5px solid var(--border)', borderRadius: 12,
+                                boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+                                padding: 6, zIndex: 100,
+                                marginTop: 4,
+                                textAlign: 'left',
+                              }}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <button
+                                className="menu-item"
+                                onClick={() => {
+                                  if (isSelectionMode) toggleItem(subject.id);
+                                  else selectSingle(subject.id);
+                                  setActiveMenuId(null);
+                                }}
+                              >
+                                {isSelected(subject.id) ? (
+                                  <><CheckSquare className="menu-icon" /> Deselect</>
+                                ) : (
+                                  <><Square className="menu-icon" /> Select</>
+                                )}
+                              </button>
+                              <button
+                                className="menu-item"
+                                onClick={() => { handleEdit(subject); setActiveMenuId(null); }}
+                              >
+                                <Edit2 className="menu-icon" /> Edit
+                              </button>
+                              <button
+                                className="menu-item menu-item-danger"
+                                onClick={async () => {
+                                  setDeleteConfirm({
+                                    isOpen: true,
+                                    title: 'Delete Subject',
+                                    message: `Are you sure you want to delete ${subject.name}? This action cannot be undone.`,
+                                    onConfirm: async () => {
+                                      try {
+                                        await deleteSubject(subject.id);
+                                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                      } catch (err: any) {
+                                        handleError(err, () => {
+                                            deleteSubject(subject.id);
+                                            setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                        });
+                                      }
+                                    }
+                                  });
+                                  setActiveMenuId(null);
+                                }}
+                              >
+                                <Trash2 className="menu-icon" /> Delete
+                              </button>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: 12 }}>
+            {filteredSubjects.map(subject => (
+              <motion.div
+                key={subject.id}
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                onClick={() => { if (isSelectionMode) toggleItem(subject.id); }}
+                style={{
+                  background: isSelected(subject.id) ? 'var(--accent-muted)' : 'var(--surface)',
+                  border: isSelected(subject.id) ? '2px solid var(--accent)' : '1.5px solid var(--border)',
+                  borderRadius: 12, padding: 14,
+                  position: 'relative'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontWeight: 700 }}>{subject.name}</h4>
+                    <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{subject.code}</p>
+                  </div>
+                  <div className="subject-menu-container" style={{ position: 'relative' }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenuId(activeMenuId === subject.id ? null : subject.id);
+                      }}
+                      className="icon-btn"
+                    >
+                      <MoreVertical style={{ width: 18, height: 18 }} />
+                    </button>
+                    <AnimatePresence>
+                      {activeMenuId === subject.id && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                          transition={{ duration: 0.15, ease: 'easeOut' }}
+                          className="faculty-card-dropdown"
+                          style={{
+                            position: 'absolute', top: '100%', right: 0,
+                            width: 160, background: 'var(--surface)',
+                            border: '1.5px solid var(--border)', borderRadius: 12,
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+                            padding: 6, zIndex: 100,
+                            marginTop: 4,
+                            textAlign: 'left',
+                          }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <button
+                            className="menu-item"
+                            onClick={() => {
+                              if (isSelectionMode) toggleItem(subject.id);
+                              else selectSingle(subject.id);
+                              setActiveMenuId(null);
+                            }}
+                          >
+                            {isSelected(subject.id) ? (
+                              <><CheckSquare className="menu-icon" /> Deselect</>
+                            ) : (
+                              <><Square className="menu-icon" /> Select</>
+                            )}
+                          </button>
+                          <button
+                            className="menu-item"
+                            onClick={() => { handleEdit(subject); setActiveMenuId(null); }}
+                          >
+                            <Edit2 className="menu-icon" /> Edit
+                          </button>
+                          <button
+                            className="menu-item menu-item-danger"
+                            onClick={async () => {
+                              setDeleteConfirm({
+                                isOpen: true,
+                                title: 'Delete Subject',
+                                message: `Are you sure you want to delete ${subject.name}? This action cannot be undone.`,
+                                onConfirm: async () => {
+                                  try {
+                                    await deleteSubject(subject.id);
+                                    setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                  } catch (err: any) {
+                                    handleError(err, () => {
+                                        deleteSubject(subject.id);
+                                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                    });
+                                  }
+                                }
+                              });
+                              setActiveMenuId(null);
+                            }}
+                          >
+                            <Trash2 className="menu-icon" /> Delete
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  <Badge variant={typeBadge(subject.subjectType) as any}>{subject.subjectType}</Badge>
+                  <Badge variant={priorityBadge(subject.priority) as any}>{subject.priority}</Badge>
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    <Clock style={{ width: 12, height: 12 }} />
+                    {subject.weeklyPeriods}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingSubject ? 'Edit Subject' : 'Add New Subject'}>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="field-label">Subject Name</label>
+              <input name="name" defaultValue={editingSubject?.name} required placeholder="e.g. Advanced Mathematics" className="field-input" style={{ width: '100%' }} />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="field-label">Subject Code</label>
+              <input name="code" defaultValue={editingSubject?.code} placeholder="Optional" className="field-input" style={{ width: '100%' }} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Subject Code</label>
-              <input
-                name="code"
-                defaultValue={editingSubject?.code}
-                placeholder="Optional (auto-generated if empty)"
-                className="w-full px-5 py-4 bg-dark-bg border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main placeholder:text-slate-700 font-medium"
-              />
+              <label className="field-label">Weekly Hours</label>
+              <StepperInput value={hoursValue} onChange={setHoursValue} name="hours" min={1} max={20} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
-                Weekly Hours <span className="text-slate-600 normal-case">(total workload)</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setHoursValue(prev => Math.max(1, prev - 1))}
-                  className="w-11 h-11 rounded-xl border border-dark-border bg-dark-bg text-text-main flex items-center justify-center hover:bg-dark-border/50 transition-colors"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <input
-                  name="hours"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={hoursValue}
-                  onChange={(e) => setHoursValue(Math.max(1, Number(e.target.value) || 1))}
-                  required
-                  className="w-full px-5 py-4 bg-dark-bg border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main font-medium text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setHoursValue(prev => Math.min(20, prev + 1))}
-                  className="w-11 h-11 rounded-xl border border-dark-border bg-dark-bg text-text-main flex items-center justify-center hover:bg-dark-border/50 transition-colors"
-                >
-                  <PlusSmall className="w-4 h-4" />
-                </button>
-              </div>
+              <label className="field-label">Credits</label>
+              <StepperInput value={creditsValue} onChange={setCreditsValue} min={0} max={10} />
             </div>
-            {/* ── Credits ── */}
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
-                Credits
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCreditsValue(prev => Math.max(0, prev - 1))}
-                  className="w-11 h-11 rounded-xl border border-dark-border bg-dark-bg text-text-main flex items-center justify-center hover:bg-dark-border/50 transition-colors"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  value={creditsValue}
-                  onChange={(e) => setCreditsValue(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full px-5 py-4 bg-dark-bg border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main font-medium text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setCreditsValue(prev => Math.min(10, prev + 1))}
-                  className="w-11 h-11 rounded-xl border border-dark-border bg-dark-bg text-text-main flex items-center justify-center hover:bg-dark-border/50 transition-colors"
-                >
-                  <PlusSmall className="w-4 h-4" />
-                </button>
-              </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="field-label">Weekly Periods <span style={{ fontWeight: 400, color: 'var(--text-placeholder)' }}>(engine quota)</span></label>
+              <StepperInput value={weeklyPeriodsValue} onChange={setWeeklyPeriodsValue} min={1} max={20} />
             </div>
-            {/* ── Weekly Periods (engine quota) ── */}
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
-                Weekly Periods <span className="text-slate-600 normal-case">(engine quota)</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setWeeklyPeriodsValue(prev => Math.max(1, prev - 1))}
-                  className="w-11 h-11 rounded-xl border border-dark-border bg-dark-bg text-text-main flex items-center justify-center hover:bg-dark-border/50 transition-colors"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={weeklyPeriodsValue}
-                  onChange={(e) => setWeeklyPeriodsValue(Math.max(1, Number(e.target.value) || 1))}
-                  className="w-full px-5 py-4 bg-dark-bg border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main font-medium text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setWeeklyPeriodsValue(prev => Math.min(20, prev + 1))}
-                  className="w-11 h-11 rounded-xl border border-dark-border bg-dark-bg text-text-main flex items-center justify-center hover:bg-dark-border/50 transition-colors"
-                >
-                  <PlusSmall className="w-4 h-4" />
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-500 mt-2">
-                How many timetable slots the engine allocates per week. Defaults to Weekly Hours if not set.
-              </p>
-            </div>
-            {/* ── Fixed Slot toggle ── */}
-            <div className="col-span-2">
+            <div style={{ gridColumn: '1 / -1' }}>
               <button
                 type="button"
                 onClick={() => setIsFixedValue(v => !v)}
-                className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border transition-all ${isFixedValue
-                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
-                  : 'bg-dark-bg border-dark-border text-slate-400'
-                  }`}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 14px', borderRadius: 10,
+                  background: isFixedValue ? 'var(--warning-bg)' : 'var(--surface-2)',
+                  border: `1.5px solid ${isFixedValue ? 'var(--warning-border)' : 'var(--border)'}`,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}
               >
-                <div className="flex items-center gap-3">
-                  <Lock className={`w-4 h-4 ${isFixedValue ? 'text-amber-400' : 'text-slate-500'}`} />
-                  <div className="text-left">
-                    <p className={`text-sm font-bold ${isFixedValue ? 'text-amber-300' : 'text-text-main'}`}>
-                      Fixed / Non-flexible Slot
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Engine pre-allocates this subject first, before theory (e.g. Library, NPTEL, TWS, Placement).
-                    </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Lock style={{ width: 15, height: 15, color: isFixedValue ? 'var(--warning-text)' : 'var(--text-secondary)' }} />
+                  <div style={{ textAlign: 'left' }}>
+                    <p style={{ fontWeight: 600, fontSize: '0.875rem', color: isFixedValue ? 'var(--warning-text)' : 'var(--text-primary)', margin: 0 }}>Fixed / Non-flexible Slot</p>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '2px 0 0' }}>Pre-allocated before other subjects</p>
                   </div>
                 </div>
-                <div className={`w-10 h-6 rounded-full flex items-center transition-all ${isFixedValue ? 'bg-amber-500 justify-end' : 'bg-slate-700 justify-start'
-                  }`}>
-                  <div className="w-4 h-4 rounded-full bg-white mx-1 shadow" />
+                <div className={`toggle-track ${isFixedValue ? 'on' : 'off'}`}>
+                  <div className="toggle-thumb" />
                 </div>
               </button>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Subject Type</label>
-              <select
-                name="subjectType"
-                defaultValue={editingSubject?.subjectType || 'Theory'}
-                className="w-full px-5 py-4 bg-dark-bg border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main font-medium appearance-none cursor-pointer"
-              >
+              <label className="field-label">Subject Type</label>
+              <select name="subjectType" defaultValue={editingSubject?.subjectType || 'Theory'} className="field-input" style={{ width: '100%', appearance: 'none', cursor: 'pointer' }}>
                 <option value="Theory">Theory</option>
                 <option value="Laboratory">Laboratory</option>
                 <option value="Theory with Laboratory">Theory with Laboratory</option>
@@ -415,38 +581,50 @@ export default function Subjects() {
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Priority</label>
-              <select
-                name="priority"
-                defaultValue={editingSubject?.priority || 'Medium'}
-                className="w-full px-5 py-4 bg-dark-bg border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main font-medium appearance-none cursor-pointer"
-              >
+              <label className="field-label">Priority</label>
+              <select name="priority" defaultValue={editingSubject?.priority || 'Medium'} className="field-input" style={{ width: '100%', appearance: 'none', cursor: 'pointer' }}>
                 <option value="Low">Low</option>
                 <option value="Medium">Medium</option>
                 <option value="High">High</option>
               </select>
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Color Tag</label>
-              <select
-                name="color"
-                defaultValue={editingSubject?.color || 'bg-blue-500'}
-                className="w-full px-5 py-4 bg-dark-bg border border-dark-border rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main font-medium appearance-none cursor-pointer"
-              >
-                <option value="bg-blue-500">Blue</option>
-                <option value="bg-emerald-500">Emerald</option>
-                <option value="bg-amber-500">Amber</option>
-                <option value="bg-purple-500">Purple</option>
-                <option value="bg-rose-500">Rose</option>
-              </select>
-            </div>
           </div>
-          <div className="flex gap-4 pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-            <Button type="submit" className="flex-1 shadow-xl shadow-brand-500/20">{editingSubject ? 'Save Changes' : 'Add Subject'}</Button>
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <button type="button" className="btn btn-outline" style={{ flex: 1, borderRadius: 10 }} onClick={() => setIsModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1, borderRadius: 10 }}>
+              {editingSubject ? 'Save Changes' : 'Add Subject'}
+            </button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={deleteConfirm.onConfirm}
+        title={deleteConfirm.title}
+        message={deleteConfirm.message}
+      />
+
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        title={errorModal.title}
+        message={errorModal.message}
+        type={errorModal.type}
+        onRetry={errorModal.onRetry}
+        onClose={() => setErrorModal(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      <style>{`
+        @media (min-width: 640px) {
+          .desktop-table { display: block !important; }
+          .mobile-cards { display: none !important; }
+        }
+        @media (max-width: 639px) {
+          .desktop-table { display: none !important; }
+          .mobile-cards { display: grid !important; }
+        }
+      `}</style>
     </div>
   );
 }

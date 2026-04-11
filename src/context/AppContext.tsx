@@ -12,7 +12,13 @@ import {
   ScheduleSlot
 } from '../types';
 import { generateTimetable as runEngine } from '../utils/timetableEngine';
-import { supabase as supabaseClient } from '../lib/supabase';
+import { supabase as supabaseClient, isSupabaseConfigured } from '../lib/supabase';
+
+export interface NotificationData {
+  title: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
 
 interface AppContextType extends AppState {
   addSubject: (s: Omit<Subject, 'id'>) => Promise<void>;
@@ -31,18 +37,34 @@ interface AppContextType extends AppState {
   updateRoom: (id: string, r: Partial<Room>) => Promise<void>;
   deleteRoom: (id: string) => Promise<void>;
 
-  generateTimetable: (name: string) => Promise<void>;
+  generateTimetable: (name: string, selectedClassIds?: string[]) => Promise<void>;
   updateTimetable: (id: string, schedule: ScheduleSlot[]) => Promise<void>;
   deleteTimetable: (id: string) => Promise<void>;
+  
+  deleteSubjects: (ids: string[]) => Promise<void>;
+  deleteFacultyBatch: (ids: string[]) => Promise<void>;
+  deleteClassesBatch: (ids: string[]) => Promise<void>;
+  deleteRoomsBatch: (ids: string[]) => Promise<void>;
 
   updateSettings: (settings: CollegeSettings) => void;
+  restoreSettingsDefaults: () => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
+
+  importData: (data: Partial<AppState>) => void;
+  resetData: () => Promise<void>;
 
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
+  updateProfile: (name: string, avatarUrl?: string) => Promise<void>;
   authLoading: boolean;
+
+  notification: NotificationData | null;
+  showNotification: (data: NotificationData) => void;
+  clearNotification: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -61,6 +83,8 @@ type ApiSubject = {
   priority?: string | null;
   color?: string | null;
   subject_type?: string | null;
+  weekly_periods?: number | null;
+  is_fixed?: boolean | null;
 };
 
 type ApiUser = {
@@ -87,6 +111,7 @@ type ApiFaculty = {
   id: string;
   name: string;
   email: string;
+  phone?: string | null;
   subjects: string[];
   availability: string[];
 };
@@ -113,7 +138,9 @@ const mapSubjectFromApi = (subject: ApiSubject): Subject => ({
   name: subject.name,
   code: subject.code || '',
   hours: Number(subject.hours),
-  credits: subject.credits ? Number(subject.credits) : undefined,
+  credits: subject.credits != null ? Number(subject.credits) : undefined,
+  weeklyPeriods: subject.weekly_periods != null ? Number(subject.weekly_periods) : undefined,
+  isFixed: !!subject.is_fixed,
   priority: normalizePriority(subject.priority),
   color: subject.color || 'bg-blue-500',
   subjectType: VALID_SUBJECT_TYPES.includes(subject.subject_type as SubjectType)
@@ -137,7 +164,30 @@ const initialState: AppState = {
     breaks: [
       { id: 'b1', name: 'Short Break', startTime: '11:05', endTime: '11:20' },
       { id: 'b2', name: 'Lunch Break', startTime: '12:15', endTime: '13:00' },
-    ]
+    ],
+    academic: {
+      defaultClassStrength: 60,
+      maxPeriodsPerDay: 7,
+      preferredSubjectsPerDay: 4,
+      allowConsecutiveSubjects: false,
+    },
+    rules: {
+      strictScheduling: true,
+      flexibleBreaks: false,
+      prioritizeMorning: true,
+      facultyWorkloadBalance: 50,
+    },
+    notifications: {
+      successAlerts: true,
+      errorAlerts: true,
+      autoSaveIndicator: true,
+    },
+    appearance: {
+      primaryColor: '#F2C94C',
+      density: 'comfortable',
+      animations: true,
+    },
+    version: '1.2.0'
   },
   theme: 'system'
 };
@@ -145,7 +195,6 @@ const initialState: AppState = {
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(() => {
     const savedV6 = localStorage.getItem(STORAGE_KEY);
-    // Check both legacy keys
     const savedLegacy = !savedV6
       ? (localStorage.getItem(STORAGE_KEY_LEGACY) ?? localStorage.getItem(STORAGE_KEY_LEGACY2))
       : null;
@@ -156,17 +205,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const parsed = JSON.parse(rawSaved) as AppState;
     const VALID_SUBJECT_TYPES_SET = new Set<string>(['Theory', 'Laboratory', 'Tutorial', 'Theory with Laboratory']);
 
-    // Any migration from a legacy key → always reset settings to correct defaults.
-    // For v6 (current) → trust stored settings BUT guard against bad endTime:
-    //   if endTime is before 14:30 there can be no afternoon periods, force defaults.
-    let settings = initialState.settings;
-    if (savedV6) {
-      const stored = parsed.settings ?? initialState.settings;
-      const endHour = parseInt((stored.endTime ?? '00:00').split(':')[0], 10);
-      settings = endHour >= 14 ? stored : initialState.settings;
-    }
+    let settings = {
+      ...initialState.settings,
+      ...(parsed.settings || {})
+    };
 
-    // Clean up all legacy keys
+    // Ensure deep objects are merged
+    settings.academic = { ...initialState.settings.academic, ...(parsed.settings?.academic || {}) };
+    settings.rules = { ...initialState.settings.rules, ...(parsed.settings?.rules || {}) };
+    settings.notifications = { ...initialState.settings.notifications, ...(parsed.settings?.notifications || {}) };
+    settings.appearance = { ...initialState.settings.appearance, ...(parsed.settings?.appearance || {}) };
+
     if (savedLegacy) {
       try { localStorage.removeItem(STORAGE_KEY_LEGACY); } catch { /* ignore */ }
       try { localStorage.removeItem(STORAGE_KEY_LEGACY2); } catch { /* ignore */ }
@@ -187,9 +236,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
   const [authLoading, setAuthLoading] = useState(true); // true until session check completes
 
-  // Always holds the latest state — used by async callbacks to avoid stale closures
   const stateRef = useRef(state);
+  const [notification, setNotification] = useState<NotificationData | null>(null);
+
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  const clearNotification = () => setNotification(null);
+
+  const showNotification = (data: NotificationData) => {
+    const currentSettings = stateRef.current.settings;
+    if (data.type === 'success' && !currentSettings.notifications.successAlerts) return;
+    if (data.type === 'error' && !currentSettings.notifications.errorAlerts) return;
+
+    setNotification(data);
+
+    setTimeout(() => {
+      setNotification(current => JSON.stringify(current) === JSON.stringify(data) ? null : current);
+    }, 5000);
+  };
+
+  const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
+  const headers = new Headers(options.headers || {});
+
+  if (
+    !headers.has('Content-Type') &&
+    options.method &&
+    options.method !== 'GET' &&
+    options.method !== 'DELETE'
+  ) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+
+  if (session?.access_token) {
+    headers.set('Authorization', `Bearer ${session.access_token}`);
+  }
+
+
+  return fetch(endpoint, { ...options, headers });
+};
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -198,14 +284,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
+    if (!state.user?.id) {
+      if (state.subjects.length > 0 || state.faculty.length > 0 || state.rooms.length > 0 || state.classes.length > 0 || state.timetables.length > 0) {
+        setState(prev => ({
+          ...prev, subjects: [], rooms: [], classes: [], faculty: [], timetables: []
+        }));
+      }
+      return;
+    }
+
     const loadInitialData = async () => {
       try {
         const [subjectsRes, roomsRes, classesRes, facultyRes, timetablesRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/subjects`),
-          fetch(`${API_BASE_URL}/api/rooms`),
-          fetch(`${API_BASE_URL}/api/classes`),
-          fetch(`${API_BASE_URL}/api/faculty`),
-          fetch(`${API_BASE_URL}/api/timetables`),
+          apiFetch(`${API_BASE_URL}/api/subjects`),
+          apiFetch(`${API_BASE_URL}/api/rooms`),
+          apiFetch(`${API_BASE_URL}/api/classes`),
+          apiFetch(`${API_BASE_URL}/api/faculty`),
+          apiFetch(`${API_BASE_URL}/api/timetables`),
         ]);
 
         if (!subjectsRes.ok || !roomsRes.ok || !classesRes.ok || !facultyRes.ok || !timetablesRes.ok) {
@@ -243,6 +338,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             id: item.id,
             name: item.name,
             email: item.email,
+            phone: item.phone ?? undefined,
             subjects: Array.isArray(item.subjects) ? item.subjects : [],
             availability: Array.isArray(item.availability) ? item.availability : [],
           })),
@@ -263,32 +359,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [state.user?.id, state.isAuthenticated]);
 
-  // ── Supabase OAuth callback + session restore handler ────────────────────
-  // 1. On mount: check if there's already an active session (returning user
-  //    or OAuth callback with #access_token in the URL).
-  // 2. onAuthStateChange: fires whenever the session changes — covers the
-  //    Google redirect-back event automatically.
-  // authLoading stays true until getSession() resolves — this prevents
-  // ProtectedRoute from redirecting to /login before the session is known.
   useEffect(() => {
-    supabaseClient.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const u = session.user;
-        setState(prev => ({
-          ...prev,
-          isAuthenticated: true,
-          user: {
-            id: u.id,
-            name: u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split('@')[0] || 'User',
-            email: u.email ?? '',
-          },
-        }));
-      }
-      // Always mark auth check as done, whether session exists or not
+    if (!isSupabaseConfigured) {
       setAuthLoading(false);
-    });
+      return;
+    }
+
+    const sessionTimeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 2000));
+    const sessionFetch = supabaseClient.auth.getSession().then(({ data }) => data.session);
+
+    Promise.race([sessionFetch, sessionTimeout])
+      .then(session => {
+        if (session?.user) {
+          const u = session.user;
+          setState(prev => ({
+            ...prev,
+            isAuthenticated: true,
+            user: {
+              id: u.id,
+              name: u.user_metadata?.name || u.user_metadata?.full_name || u.email?.split('@')[0] || 'User',
+              email: u.email ?? '',
+            },
+          }));
+        }
+        setAuthLoading(false);
+      })
+      .catch(() => {
+        setAuthLoading(false);
+      });
 
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
       (_event, session) => {
@@ -299,7 +399,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             isAuthenticated: true,
             user: {
               id: u.id,
-              name: u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split('@')[0] || 'User',
+              name: u.user_metadata?.name || u.user_metadata?.full_name || u.email?.split('@')[0] || 'User',
               email: u.email ?? '',
             },
           }));
@@ -333,36 +433,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email,
+      password,
     });
 
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      throw new Error(errorBody.error || `Login failed (${response.status})`);
-    }
+    if (error) throw error;
 
-    const user = (await response.json()) as ApiUser;
-    setState(prev => ({
-      ...prev,
-      isAuthenticated: true,
-      user,
-    }));
+    if (data.user) {
+      setState(prev => ({
+        ...prev,
+        isAuthenticated: true,
+        user: {
+          id: data.user!.id,
+          name: data.user!.user_metadata?.name || data.user!.user_metadata?.full_name || data.user!.email?.split('@')[0] || 'User',
+          email: data.user!.email!,
+        },
+      }));
+    }
   };
 
   const signup = async (name: string, email: string, password: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password }),
+    const { data, error } = await supabaseClient.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name },
+        emailRedirectTo: `${window.location.origin}/login`,
+      },
     });
 
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      throw new Error(errorBody.error || `Signup failed (${response.status})`);
-    }
+    if (error) throw error;
+    if (!data.user) throw new Error('Signup failed');
   };
 
   const loginWithGoogle = async () => {
@@ -374,22 +476,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       },
     });
     if (error) throw new Error(error.message);
-    // The browser will redirect to Google — no further action needed here.
   };
 
   const logout = () => {
     supabaseClient.auth.signOut().catch(() => { });
+    localStorage.removeItem(STORAGE_KEY);
     setState(prev => ({
       ...prev,
       isAuthenticated: false,
-      user: null
+      user: null,
+      subjects: [],
+      rooms: [],
+      classes: [],
+      faculty: [],
+      timetables: []
     }));
   };
 
+  const resetPassword = async (email: string) => {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) throw error;
+  };
+
+  const updatePassword = async (password: string) => {
+    const { error } = await supabaseClient.auth.updateUser({
+      password: password
+    });
+    if (error) throw error;
+  };
+
   const addSubject = async (s: Omit<Subject, 'id'>) => {
-    const response = await fetch(`${API_BASE_URL}/api/subjects`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/subjects`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: s.name,
         code: s.code,
@@ -413,9 +533,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateSubject = async (id: string, s: Partial<Subject>) => {
-    const response = await fetch(`${API_BASE_URL}/api/subjects/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/subjects/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: s.name,
         code: s.code,
@@ -442,7 +561,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteSubject = async (id: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/subjects/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/subjects/${id}`, {
       method: 'DELETE',
     });
 
@@ -455,9 +574,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addFaculty = async (f: Omit<FacultyMember, 'id'>) => {
-    const response = await fetch(`${API_BASE_URL}/api/faculty`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/faculty`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(f),
     });
 
@@ -475,6 +593,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           id: created.id,
           name: created.name,
           email: created.email,
+          phone: created.phone ?? undefined,
           subjects: created.subjects || [],
           availability: created.availability || [],
         },
@@ -483,9 +602,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateFaculty = async (id: string, f: Partial<FacultyMember>) => {
-    const response = await fetch(`${API_BASE_URL}/api/faculty/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/faculty/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(f),
     });
 
@@ -503,6 +621,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             id: updated.id,
             name: updated.name,
             email: updated.email,
+            phone: updated.phone ?? undefined,
             subjects: updated.subjects || [],
             availability: updated.availability || [],
           }
@@ -512,7 +631,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteFaculty = async (id: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/faculty/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/faculty/${id}`, {
       method: 'DELETE',
     });
 
@@ -525,9 +644,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addClass = async (c: Omit<ClassSection, 'id'>) => {
-    const response = await fetch(`${API_BASE_URL}/api/classes`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/classes`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(c),
     });
 
@@ -552,9 +670,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateClass = async (id: string, c: Partial<ClassSection>) => {
-    const response = await fetch(`${API_BASE_URL}/api/classes/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/classes/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(c),
     });
 
@@ -580,7 +697,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteClass = async (id: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/classes/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/classes/${id}`, {
       method: 'DELETE',
     });
 
@@ -593,9 +710,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addRoom = async (r: Omit<Room, 'id'>) => {
-    const response = await fetch(`${API_BASE_URL}/api/rooms`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/rooms`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(r),
     });
 
@@ -620,9 +736,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateRoom = async (id: string, r: Partial<Room>) => {
-    const response = await fetch(`${API_BASE_URL}/api/rooms/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/rooms/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(r),
     });
 
@@ -648,7 +763,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteRoom = async (id: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/rooms/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/rooms/${id}`, {
       method: 'DELETE',
     });
 
@@ -660,15 +775,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(prev => ({ ...prev, rooms: prev.rooms.filter(item => item.id !== id) }));
   };
 
-  const generateTimetable = async (name: string) => {
-    // Always read from ref to guarantee latest settings (avoids stale closure)
+  const deleteSubjects = async (ids: string[]) => {
+    const response = await apiFetch(`${API_BASE_URL}/api/subjects?ids=${ids.join(',')}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Bulk delete subjects failed');
+    setState(prev => ({ ...prev, subjects: prev.subjects.filter(item => !ids.includes(item.id)) }));
+  };
+
+  const deleteFacultyBatch = async (ids: string[]) => {
+    const response = await apiFetch(`${API_BASE_URL}/api/faculty?ids=${ids.join(',')}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Bulk delete faculty failed');
+    setState(prev => ({ ...prev, faculty: prev.faculty.filter(item => !ids.includes(item.id)) }));
+  };
+
+  const deleteClassesBatch = async (ids: string[]) => {
+    const response = await apiFetch(`${API_BASE_URL}/api/classes?ids=${ids.join(',')}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Bulk delete classes failed');
+    setState(prev => ({ ...prev, classes: prev.classes.filter(item => !ids.includes(item.id)) }));
+  };
+
+  const deleteRoomsBatch = async (ids: string[]) => {
+    const response = await apiFetch(`${API_BASE_URL}/api/rooms?ids=${ids.join(',')}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Bulk delete rooms failed');
+    setState(prev => ({ ...prev, rooms: prev.rooms.filter(item => !ids.includes(item.id)) }));
+  };
+
+  const generateTimetable = async (name: string, selectedClassIds?: string[]) => {
     const current = stateRef.current;
 
-    // ── Run the constraint-satisfaction engine ────────────────────────────────
+    const filteredClasses = selectedClassIds 
+      ? current.classes.filter(c => selectedClassIds.includes(c.id))
+      : current.classes;
+
     const result = runEngine({
       subjects: current.subjects,
       faculty: current.faculty,
-      classes: current.classes,
+      classes: filteredClasses,
       rooms: current.rooms,
       settings: current.settings,
     });
@@ -684,9 +825,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const { schedule } = result;
 
-    const response = await fetch(`${API_BASE_URL}/api/timetables`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/timetables`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name,
         createdAt: new Date().toISOString(),
@@ -714,9 +854,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const updateTimetable = async (id: string, schedule: ScheduleSlot[]) => {
     const existing = state.timetables.find(item => item.id === id);
-    const response = await fetch(`${API_BASE_URL}/api/timetables/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/timetables/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         schedule,
         settingsSnapshot: existing?.settingsSnapshot ?? state.settings,
@@ -746,7 +885,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteTimetable = async (id: string) => {
-    const response = await fetch(`${API_BASE_URL}/api/timetables/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/api/timetables/${id}`, {
       method: 'DELETE',
     });
 
@@ -758,6 +897,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState(prev => ({ ...prev, timetables: prev.timetables.filter(item => item.id !== id) }));
   };
 
+  const restoreSettingsDefaults = () => {
+    setState(prev => ({ ...prev, settings: initialState.settings }));
+  };
+
+  const importData = (data: Partial<AppState>) => {
+    setState(prev => ({
+      ...prev,
+      ...data,
+      settings: data.settings ? { ...initialState.settings, ...data.settings } : prev.settings
+    }));
+  };
+
+  const resetData = async () => {
+    setState(prev => ({
+      ...initialState,
+      user: prev.user,
+      isAuthenticated: prev.isAuthenticated,
+      theme: prev.theme
+    }));
+  };
+
+  const updateProfile = async (name: string, avatarUrl?: string) => {
+    if (state.isAuthenticated && state.user) {
+      // 1. Update Supabase Auth metadata
+      const { error: authError } = await supabaseClient.auth.updateUser({
+        data: { name, full_name: name, avatar_url: avatarUrl }
+      });
+      if (authError) throw authError;
+
+      // 2. Update public.users table directly
+      const { error: dbError } = await supabaseClient
+        .from('users')
+        .update({ name })
+        .eq('email', state.user.email);
+      
+      // If no record exists in public.users yet, we ignore the error or create it
+      // Standard behavior: if it fails, we just rely on auth metadata
+      if (dbError) {
+         console.warn('Could not sync with public.users table', dbError);
+      }
+    }
+
+    // 3. Update local state immediately
+    setState(prev => ({
+      ...prev,
+      user: prev.user ? { ...prev.user, name, avatarUrl: avatarUrl || prev.user.avatarUrl } : null
+    }));
+  };
+
   return (
     <AppContext.Provider value={{
       ...state,
@@ -765,10 +953,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addFaculty, updateFaculty, deleteFaculty,
       addClass, updateClass, deleteClass,
       addRoom, updateRoom, deleteRoom,
+      deleteSubjects, deleteFacultyBatch, deleteClassesBatch, deleteRoomsBatch,
       generateTimetable, updateTimetable, deleteTimetable,
-      updateSettings, setTheme,
-      login, loginWithGoogle, signup, logout,
-      authLoading
+      updateSettings, restoreSettingsDefaults, setTheme,
+      importData, resetData,
+      login, loginWithGoogle, signup, logout, resetPassword, updatePassword, updateProfile,
+      authLoading,
+      notification, showNotification, clearNotification
     }}>
       {children}
     </AppContext.Provider>

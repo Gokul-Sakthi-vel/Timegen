@@ -60,29 +60,25 @@ export const buildTeachingSlots = (settings: CollegeSettings): string[] => {
 
   const slots: string[] = [];
   let current = startMin;
-  // After jumping over a break, allow one more period even if it slightly
-  // exceeds the nominal end time — breaks should never swallow periods.
   let justJumpedBreak = false;
 
-  while (current + duration <= endMin || (justJumpedBreak && current < endMin)) {
+  while (current + duration <= endMin + 5 || (justJumpedBreak && current < endMin)) {
     justJumpedBreak = false;
     const slotEnd = current + duration;
 
-    // Find the FIRST break that this candidate window overlaps
     const blocking = breaks.find(b => overlaps(current, slotEnd, b.start, b.end));
 
     if (!blocking) {
-      // Clean period — record it and advance normally
       slots.push(fromMinutes(current));
       current += duration;
     } else {
-      // Skip over the break: jump to its end, then retry without losing a period
       current = blocking.end;
       justJumpedBreak = true;
     }
   }
 
-  return slots;
+  const max = settings.academic.maxPeriodsPerDay;
+  return max && max > 0 ? slots.slice(0, max) : slots;
 };
 
 /**
@@ -116,7 +112,6 @@ export const buildTimeline = (settings: CollegeSettings): TimelineEntry[] => {
   return [...periodEntries, ...breakEntries].sort((a, b) => {
     const byStart = toMinutes(a.start) - toMinutes(b.start);
     if (byStart !== 0) return byStart;
-    // Break before period if they start at the same time
     if (a.type === b.type) return 0;
     return a.type === 'break' ? -1 : 1;
   });

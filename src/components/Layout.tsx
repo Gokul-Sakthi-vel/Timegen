@@ -2,52 +2,87 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { Menu, Calendar } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import GlobalNotification from './GlobalNotification';
 
 export default function Layout() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-dark-bg">
-      <Sidebar 
-        isCollapsed={isCollapsed} 
+    <div style={{ background: 'var(--bg)', minHeight: 'auto' }}>
+      <GlobalNotification />
+      <Sidebar
+        isCollapsed={isCollapsed}
         setIsCollapsed={setIsCollapsed}
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
       />
-      
-      <div className={cn(
-        "flex-1 flex flex-col transition-all duration-300",
-        isCollapsed ? "lg:ml-20" : "lg:ml-64"
-      )}>
-        {/* Mobile Header */}
-        <header className="lg:hidden h-16 bg-dark-bg border-b border-dark-border flex items-center justify-between px-4 sticky top-0 z-40">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
-              <Calendar className="text-white w-5 h-5" />
+
+      <div
+        style={{
+          flex: 1,
+          paddingLeft: 0,
+          transition: 'padding-left 0.25s',
+          minHeight: 'auto',
+        }}
+        className={`main-area ${isCollapsed ? 'main-area-collapsed' : ''}`}
+      >
+        <header
+          style={{
+            height: 56,
+            background: 'var(--surface)',
+            borderBottom: '1.5px solid var(--border)',
+            padding: '0 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            position: 'sticky',
+            top: 0,
+            zIndex: 40,
+          }}
+          className="mobile-header"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="logo-badge">
+              <Calendar style={{ width: 18, height: 18 }} />
             </div>
-            <span className="text-text-header font-bold">TimeTable AI</span>
+            <span style={{ fontWeight: 800, fontSize: '0.9375rem', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+              Timegen
+            </span>
           </div>
-          <button 
+          <button
             onClick={() => setIsMobileOpen(true)}
-            className="p-2 text-slate-400 hover:text-text-header"
+            style={{
+              background: 'var(--surface-2)',
+              border: '1.5px solid var(--border)',
+              borderRadius: 8,
+              padding: '6px 8px',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+              display: 'flex', alignItems: 'center',
+            }}
           >
-            <Menu className="w-6 h-6" />
+            <Menu style={{ width: 18, height: 18 }} />
           </button>
         </header>
 
-        <main className="p-4 md:p-8">
-          <div className="max-w-7xl mx-auto">
+        <main style={{ padding: '20px 24px 12px' }}>
+          <div style={{ maxWidth: 1200, margin: '0 auto' }}>
             <Outlet />
           </div>
         </main>
       </div>
+
+      <style>{`
+        @media (min-width: 1024px) {
+          .mobile-header { display: none !important; }
+          .main-area { padding-left: var(--sidebar-w) !important; }
+          .main-area-collapsed { padding-left: var(--sidebar-w-collapsed) !important; }
+        }
+        @media (max-width: 1023px) {
+          .main-area { padding-left: 0 !important; }
+        }
+      `}</style>
     </div>
   );
 }

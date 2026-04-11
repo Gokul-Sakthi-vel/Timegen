@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Temporary and debug files
+*.txt
+tmp_*.js

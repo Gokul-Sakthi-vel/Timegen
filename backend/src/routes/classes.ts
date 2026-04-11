@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express from "express";
 import {
   createClass,
   deleteClass,
@@ -7,12 +7,16 @@ import {
   updateClass,
 } from '../api/classes';
 
-const router = Router();
+const router = express.Router();
 
 router.get('/', getClasses);
 router.get('/:id', getClassById);
 router.post('/', createClass);
 router.put('/:id', updateClass);
 router.delete('/:id', deleteClass);
+router.delete('/', deleteClass);
 
 export default router;
+
+
+

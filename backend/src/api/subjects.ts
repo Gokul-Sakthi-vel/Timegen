@@ -1,12 +1,14 @@
-import { Request, Response } from 'express';
+import express from "express";
+import { AuthRequest } from '../middleware/auth';
 import { supabase } from '../supabase';
 
 const generateFallbackCode = () => `SUB${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`;
 
-export const getSubjects = async (req: Request, res: Response) => {
+export const getSubjects = async (req: AuthRequest, res: express.Response) => {
   const { data, error } = await supabase
     .from('subjects')
     .select('*')
+    .eq('user_id', req.userId)
     .order('name', { ascending: true });
   if (error) {
     return res.status(500).json({ error: error.message });
@@ -14,9 +16,9 @@ export const getSubjects = async (req: Request, res: Response) => {
   res.json(data);
 };
 
-export const getSubjectById = async (req: Request, res: Response) => {
+export const getSubjectById = async (req: AuthRequest, res: express.Response) => {
   const { id } = req.params;
-  const { data, error } = await supabase.from('subjects').select('*').eq('id', id).single();
+  const { data, error } = await supabase.from('subjects').select('*').eq('id', id).eq('user_id', req.userId).single();
   if (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -26,100 +28,129 @@ export const getSubjectById = async (req: Request, res: Response) => {
   res.json(data);
 };
 
-export const createSubject = async (req: Request, res: Response) => {
-  const { name, code, hours, priority, color, subjectType } = req.body;
-
-  if (!name || typeof hours !== 'number') {
-    return res
-      .status(400)
-      .json({ error: 'name and numeric hours are required.' });
+const filterPayload = async (table: string, payload: Record<string, any>) => {
+  try {
+    const { data } = await supabase.from(table).select().limit(1);
+    const existingKeys = data && data.length > 0 ? Object.keys(data[0]) : [];
+    
+    if (existingKeys.length > 0) {
+        const allowedKeys = new Set([...existingKeys, 'user_id', 'credits', 'weekly_periods', 'is_fixed']);
+        return Object.fromEntries(
+            Object.entries(payload).filter(([key, val]) => allowedKeys.has(key) && val !== undefined)
+        );
+    }
+    
+    return Object.fromEntries(
+      Object.entries(payload).filter(([_, val]) => val !== undefined)
+    );
+  } catch {
+    return Object.fromEntries(
+      Object.entries(payload).filter(([_, val]) => val !== undefined)
+    );
   }
-
-  const normalizedCode = (typeof code === 'string' && code.trim().length > 0)
-    ? code.trim().toUpperCase()
-    : generateFallbackCode();
-
-  const payload: Record<string, unknown> = {
-    name,
-    code: normalizedCode,
-    hours,
-    priority,
-    color,
-    subject_type: subjectType || 'Theory',
-  };
-
-  let { data, error } = await supabase
-    .from('subjects')
-    .insert([payload])
-    .select('*')
-    .single();
-
-  if (error && error.message.includes('subject_type')) {
-    const fallbackPayload = { ...payload };
-    delete fallbackPayload.subject_type;
-    const fallback = await supabase
-      .from('subjects')
-      .insert([fallbackPayload])
-      .select('*')
-      .single();
-    data = fallback.data;
-    error = fallback.error;
-  }
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
-
-  res.status(201).json(data);
 };
 
-export const updateSubject = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { name, code, hours, priority, color, subjectType } = req.body;
-  const updatePayload: Record<string, unknown> = {
-    name,
-    code: typeof code === 'string' && code.trim().length > 0 ? code.trim().toUpperCase() : undefined,
-    hours,
-    priority,
-    color,
-    subject_type: subjectType,
-  };
+export const createSubject = async (req: AuthRequest, res: express.Response) => {
+  try {
+    const { name, code, hours, priority, color, subjectType, credits, weeklyPeriods, isFixed } = req.body;
 
-  const cleanedPayload = Object.fromEntries(
-    Object.entries(updatePayload).filter(([, value]) => value !== undefined)
-  );
+    if (!name || typeof hours !== 'number') {
+      return res
+        .status(400)
+        .json({ error: 'name and numeric hours are required.' });
+    }
 
-  let { data, error } = await supabase
-    .from('subjects')
-    .update(cleanedPayload)
-    .eq('id', id)
-    .select('*')
-    .single();
+    const normalizedCode = (typeof code === 'string' && code.trim().length > 0)
+      ? code.trim().toUpperCase()
+      : generateFallbackCode();
 
-  if (error && error.message.includes('subject_type')) {
-    const fallbackPayload = { ...cleanedPayload };
-    delete fallbackPayload.subject_type;
-    const fallback = await supabase
+    const rawPayload: Record<string, unknown> = {
+      name,
+      code: normalizedCode,
+      hours,
+      credits,
+      priority,
+      color: color || 'bg-blue-500',
+      subject_type: subjectType || 'Theory',
+      weekly_periods: weeklyPeriods ?? hours,
+      is_fixed: isFixed ?? false,
+      user_id: req.userId,
+    };
+
+    const payload = await filterPayload('subjects', rawPayload);
+
+    const { data, error } = await supabase
       .from('subjects')
-      .update(fallbackPayload)
+      .insert([payload])
+      .select('*')
+      .single();
+
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.status(201).json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+};
+
+export const updateSubject = async (req: AuthRequest, res: express.Response) => {
+  try {
+    const { id } = req.params;
+    const { name, code, hours, priority, color, subjectType, credits, weeklyPeriods, isFixed } = req.body;
+    
+    const rawUpdate: Record<string, unknown> = {
+      name,
+      code: typeof code === 'string' && code.trim().length > 0 ? code.trim().toUpperCase() : undefined,
+      hours,
+      credits,
+      weekly_periods: weeklyPeriods,
+      is_fixed: isFixed,
+      priority,
+      color,
+      subject_type: subjectType,
+    };
+
+    const cleanedPayload = Object.fromEntries(
+      Object.entries(rawUpdate).filter(([, value]) => value !== undefined)
+    );
+
+    const payload = await filterPayload('subjects', cleanedPayload);
+
+    const { data, error } = await supabase
+      .from('subjects')
+      .update(payload)
       .eq('id', id)
+      .eq('user_id', req.userId)
       .select('*')
       .single();
-    data = fallback.data;
-    error = fallback.error;
-  }
 
-  if (error) {
-    return res.status(500).json({ error: error.message });
+    if (error) {
+      return res.status(500).json({ error: error.message });
+    }
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
-  res.json(data);
 };
 
-export const deleteSubject = async (req: Request, res: Response) => {
+export const deleteSubject = async (req: AuthRequest, res: express.Response) => {
   const { id } = req.params;
-  const { error } = await supabase.from('subjects').delete().eq('id', id);
+  const ids = req.query.ids as string;
+
+  if (ids) {
+    const idList = ids.split(',');
+    const { error } = await supabase.from('subjects').delete().in('id', idList).eq('user_id', req.userId);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(204).send();
+  }
+
+  const { error } = await supabase.from('subjects').delete().eq('id', id).eq('user_id', req.userId);
   if (error) {
     return res.status(500).json({ error: error.message });
   }
   res.status(204).send();
 };
+
+

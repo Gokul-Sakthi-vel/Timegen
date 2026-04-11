@@ -1,46 +1,18 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Calendar, Mail, Lock, ArrowRight, AlertCircle, ExternalLink } from 'lucide-react';
-import { Button } from '../components/UI';
+import { 
+  Calendar, 
+  Mail, 
+  Lock, 
+  AlertCircle, 
+  ArrowRight, 
+  Eye, 
+  EyeOff, 
+  Loader2,
+  CheckCircle2
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../context/AppContext';
-
-// ── Google SVG icon ─────────────────────────────────────────────────────────
-const GoogleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-    <path fill="none" d="M0 0h48v48H0z" />
-  </svg>
-);
-
-
-// ── Setup notice component ───────────────────────────────────────────────────
-const GoogleSetupNotice = () => (
-  <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-left">
-    <p className="text-[11px] font-bold text-amber-400 mb-1 flex items-center gap-1.5">
-      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-      Google OAuth Setup Required
-    </p>
-    <p className="text-[10px] text-amber-500/80 leading-relaxed">
-      Enable Google provider in your Supabase dashboard:
-    </p>
-    <ol className="text-[10px] text-amber-500/80 mt-1 space-y-0.5 list-decimal list-inside">
-      <li>Go to Supabase → Authentication → Providers</li>
-      <li>Enable Google &amp; add your Client ID / Secret</li>
-      <li>Add callback: <span className="font-mono">…supabase.co/auth/v1/callback</span></li>
-    </ol>
-    <a
-      href="https://supabase.com/docs/guides/auth/social-login/auth-google"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 mt-2 text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors"
-    >
-      View Setup Guide <ExternalLink className="w-3 h-3" />
-    </a>
-  </div>
-);
 
 export default function Login() {
   const navigate = useNavigate();
@@ -49,14 +21,15 @@ export default function Login() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<'google' | null>(null);
-  const [showGoogleSetup, setShowGoogleSetup] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
 
-  // ── Email / Password sign in ─────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -65,145 +38,239 @@ export default function Login() {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      setError(err instanceof Error ? err.message : 'Invalid email or password');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ── Google OAuth ─────────────────────────────────────────────────────────
   const handleGoogle = async () => {
     setError('');
-    setShowGoogleSetup(false);
-    setOauthLoading('google');
+    setOauthLoading(true);
     try {
       await loginWithGoogle();
-      // Redirect happens automatically — no navigate needed
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Google sign-in failed.';
-      // Supabase throws "provider is not enabled" when Google OAuth isn't configured
-      if (msg.toLowerCase().includes('provider') || msg.toLowerCase().includes('not enabled') || msg.toLowerCase().includes('validation')) {
-        setShowGoogleSetup(true);
-      } else {
-        setError(msg);
-      }
-      setOauthLoading(null);
+      setError(err instanceof Error ? err.message : 'Google sign-in failed.');
+      setOauthLoading(false);
     }
   };
 
-
   return (
-    <div className="min-h-screen bg-dark-bg flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-
-        {/* ── Logo ── */}
-        <div className="text-center mb-8">
-          <div className="inline-flex w-16 h-16 bg-brand-500 rounded-2xl items-center justify-center shadow-2xl shadow-brand-500/30 mb-6">
-            <Calendar className="text-white w-8 h-8" />
+    <div style={{
+      minHeight: '100vh',
+      background: 'var(--bg)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px 16px',
+    }}>
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        style={{ width: '100%', maxWidth: 420 }}
+      >
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ display: 'inline-flex', marginBottom: 12 }}>
+            <motion.div 
+              whileHover={{ scale: 1.05, rotate: 5 }}
+              className="logo-badge" 
+              style={{ width: 44, height: 44, borderRadius: 12, fontSize: '1rem', boxShadow: '0 8px 16px rgba(242, 201, 76, 0.2)' }}
+            >
+              <Calendar style={{ width: 22, height: 22 }} />
+            </motion.div>
           </div>
-          <h1 className="text-3xl font-display font-bold text-text-header tracking-tight">Welcome Back</h1>
-          <p className="text-slate-500 mt-2 font-medium uppercase tracking-widest text-xs">Admin Portal</p>
+          <h1 style={{
+            fontSize: '1.75rem',
+            fontWeight: 800,
+            color: 'var(--text-primary)',
+            letterSpacing: '-0.04em',
+            margin: '0 0 6px',
+            lineHeight: 1.1
+          }}>
+            Welcome back 👋
+          </h1>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+            Sign in to continue to Timetable AI
+          </p>
         </div>
 
-        <div className="bg-dark-surface rounded-3xl border border-dark-border shadow-2xl p-8 space-y-5">
+        <div style={{
+          background: 'var(--surface)',
+          border: '1.5px solid var(--border)',
+          borderRadius: 20,
+          padding: '24px 28px',
+          boxShadow: 'var(--shadow-modal)',
+          position: 'relative',
+        }}>
+          <button
+            type="button"
+            onClick={handleGoogle}
+            disabled={oauthLoading || isSubmitting}
+            className="btn btn-outline"
+            style={{ 
+              width: '100%', 
+              padding: '10px 20px', 
+              borderRadius: 10, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: 12, 
+              marginBottom: 16,
+              fontSize: '0.875rem',
+              fontWeight: 600,
+            }}
+          >
+            {oauthLoading ? (
+               <Loader2 className="animate-spin" style={{ width: 18, height: 18 }} />
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+            )}
+            {oauthLoading ? 'Signing in...' : 'Continue with Google'}
+          </button>
 
-          {/* ── Email / Password form ── */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-placeholder)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>OR</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          </div>
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Email Address</label>
+              <div style={{ position: 'relative' }}>
+                <Mail style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, color: 'var(--text-placeholder)' }} />
                 <input
-                  type="email"
-                  required
-                  value={email}
+                  type="email" required value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="admin@college.edu"
-                  className="w-full pl-12 pr-4 py-3 bg-dark-bg border border-dark-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main placeholder:text-slate-700 font-medium"
+                  placeholder="name@company.com"
+                  className="field-input" style={{ paddingLeft: 40, borderRadius: 10, padding: '10px 14px 10px 40px', fontSize: '0.9rem' }}
                 />
               </div>
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  Password
-                </label>
-                <a href="#" className="text-[10px] font-bold text-brand-500 hover:text-brand-400 uppercase tracking-widest">
-                  Forgot?
-                </a>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <label className="field-label" style={{ margin: 0, fontSize: '0.7rem' }}>Password</label>
+                <Link to="/forgot-password" className="link-hover" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>Forgot password?</Link>
               </div>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <div style={{ position: 'relative' }}>
+                <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, color: 'var(--text-placeholder)' }} />
                 <input
-                  type="password"
-                  required
-                  value={password}
+                  type={showPassword ? "text" : "password"} 
+                  required value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-12 pr-4 py-3 bg-dark-bg border border-dark-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main placeholder:text-slate-700 font-medium"
+                  className="field-input" style={{ paddingLeft: 40, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 40px', fontSize: '0.9rem' }}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center'
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
-            {error && (
-              <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
-                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-red-400 font-medium">{error}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: -4 }}>
+              <div 
+                onClick={() => setRememberMe(!rememberMe)}
+                style={{
+                  width: 16, height: 16, borderRadius: 4, 
+                  border: `1.5px solid ${rememberMe ? 'var(--accent)' : 'var(--border)'}`,
+                  background: rememberMe ? 'var(--accent)' : 'transparent',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {rememberMe && <CheckCircle2 size={12} color="var(--bg)" />}
               </div>
-            )}
+              <span 
+                onClick={() => setRememberMe(!rememberMe)}
+                style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500 }}
+              >
+                Remember me for 30 days
+              </span>
+            </div>
 
-            <Button
+            <AnimatePresence>
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 12px', borderRadius: 10,
+                    background: 'var(--danger-bg)', border: '1.5px solid var(--danger-border)',
+                  }}
+                >
+                  <AlertCircle style={{ width: 16, height: 16, color: 'var(--danger-text)', flexShrink: 0 }} />
+                  <p style={{ fontSize: '0.8rem', color: 'var(--danger-text)', margin: 0, fontWeight: 500 }}>{error}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
               type="submit"
-              disabled={isSubmitting || oauthLoading !== null}
-              className="w-full py-3 text-base shadow-2xl shadow-brand-500/30"
-              icon={ArrowRight}
+              disabled={isSubmitting || oauthLoading}
+              className="btn btn-primary"
+              style={{ width: '100%', padding: '12px 20px', fontSize: '0.9rem', borderRadius: 10, marginTop: 4, gap: 8 }}
             >
-              {isSubmitting ? 'Signing In…' : 'Sign In'}
-            </Button>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="animate-spin" style={{ width: 18, height: 18 }} />
+                  Signing in...
+                </>
+              ) : (
+                <>Sign In <ArrowRight style={{ width: 16, height: 16 }} /></>
+              )}
+            </motion.button>
           </form>
 
-          {/* ── Sign up link ── */}
-          <div className="text-center">
-            <p className="text-sm text-slate-500 font-medium">
-              Don't have an account?{' '}
-              <Link to="/signup" className="font-bold text-brand-500 hover:text-brand-400 transition-colors">
-                Create Account
-              </Link>
-            </p>
-          </div>
-
-          {/* ── Divider ── */}
-          <div className="flex items-center gap-4">
-            <div className="flex-1 h-px bg-dark-border" />
-            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">or continue with</span>
-            <div className="flex-1 h-px bg-dark-border" />
-          </div>
-
-          {/* ── OAuth Buttons (bottom) ── */}
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={handleGoogle}
-              disabled={oauthLoading !== null || isSubmitting}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-dark-bg border border-dark-border hover:border-slate-500 hover:bg-white/5 transition-all font-semibold text-text-main text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {oauthLoading === 'google' ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <GoogleIcon />
-              )}
-              {oauthLoading === 'google' ? 'Redirecting to Google…' : 'Continue with Google'}
-            </button>
-
-            {/* Setup notice — shown only when Google provider isn't enabled */}
-            {showGoogleSetup && <GoogleSetupNotice />}
-          </div>
-
+          <p style={{ textAlign: 'center', fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '16px 0 0' }}>
+            Don't have an account?{' '}
+            <Link to="/signup" className="link-hover" style={{ fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>
+              Create Account
+            </Link>
+          </p>
         </div>
-      </div>
+
+        <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-placeholder)', marginTop: 16, lineHeight: 1.4 }}>
+          Secure login with industry-standard encryption.<br/>
+          © 2026 Timetable AI.
+        </p>
+      </motion.div>
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        .field-input:focus {
+          border-color: var(--accent) !important;
+          box-shadow: 0 0 0 3px var(--accent-muted) !important;
+        }
+        .link-hover:hover {
+          text-decoration: underline !important;
+          opacity: 0.9;
+        }
+      `}</style>
     </div>
   );
 }
+

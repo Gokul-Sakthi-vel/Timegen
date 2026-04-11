@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express from "express";
 import {
   createSubject,
   deleteSubject,
@@ -7,12 +7,16 @@ import {
   updateSubject,
 } from '../api/subjects';
 
-const router = Router();
+const router = express.Router();
 
 router.get('/', getSubjects);
 router.get('/:id', getSubjectById);
 router.post('/', createSubject);
 router.put('/:id', updateSubject);
 router.delete('/:id', deleteSubject);
+router.delete('/', deleteSubject);
 
 export default router;
+
+
+

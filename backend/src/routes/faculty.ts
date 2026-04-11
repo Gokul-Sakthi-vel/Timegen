@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express from "express";
 import {
   createFaculty,
   deleteFaculty,
@@ -7,12 +7,16 @@ import {
   updateFaculty,
 } from '../api/faculty';
 
-const router = Router();
+const router = express.Router();
 
 router.get('/', getFaculty);
 router.get('/:id', getFacultyById);
 router.post('/', createFaculty);
 router.put('/:id', updateFaculty);
 router.delete('/:id', deleteFaculty);
+router.delete('/', deleteFaculty);
 
 export default router;
+
+
+

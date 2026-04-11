@@ -1,4 +1,5 @@
-import { Request, Response } from 'express';
+import express from "express";
+import { AuthRequest } from '../middleware/auth';
 import { supabase } from '../supabase';
 
 type TimetableRow = {
@@ -40,10 +41,11 @@ const mapTimetable = (row: TimetableRow) => {
   };
 };
 
-export const getTimetables = async (req: Request, res: Response) => {
+export const getTimetables = async (req: AuthRequest, res: express.Response) => {
   const { data, error } = await supabase
     .from('timetables')
     .select('id,name,created_at,timetable_data')
+    .eq('user_id', req.userId)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -53,7 +55,7 @@ export const getTimetables = async (req: Request, res: Response) => {
   res.json((data as TimetableRow[]).map(mapTimetable));
 };
 
-export const createTimetable = async (req: Request, res: Response) => {
+export const createTimetable = async (req: AuthRequest, res: express.Response) => {
   const { name, schedule, createdAt, settingsSnapshot } = req.body as {
     name?: string;
     schedule?: unknown[];
@@ -65,12 +67,13 @@ export const createTimetable = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'name is required.' });
   }
 
-  const payload: { name: string; timetable_data: unknown; created_at?: string } = {
+  const payload: { name: string; timetable_data: unknown; created_at?: string; user_id?: string } = {
     name,
     timetable_data: {
       schedule: Array.isArray(schedule) ? schedule : [],
       settingsSnapshot: settingsSnapshot ?? null,
     },
+    user_id: req.userId,
   };
 
   if (createdAt) {
@@ -90,7 +93,7 @@ export const createTimetable = async (req: Request, res: Response) => {
   res.status(201).json(mapTimetable(data as TimetableRow));
 };
 
-export const updateTimetable = async (req: Request, res: Response) => {
+export const updateTimetable = async (req: AuthRequest, res: express.Response) => {
   const { id } = req.params;
   const { schedule, settingsSnapshot } = req.body as {
     schedule?: unknown[];
@@ -110,6 +113,7 @@ export const updateTimetable = async (req: Request, res: Response) => {
       },
     })
     .eq('id', id)
+    .eq('user_id', req.userId)
     .select('id,name,created_at,timetable_data')
     .single();
 
@@ -120,9 +124,9 @@ export const updateTimetable = async (req: Request, res: Response) => {
   res.json(mapTimetable(data as TimetableRow));
 };
 
-export const deleteTimetable = async (req: Request, res: Response) => {
+export const deleteTimetable = async (req: AuthRequest, res: express.Response) => {
   const { id } = req.params;
-  const { error } = await supabase.from('timetables').delete().eq('id', id);
+  const { error } = await supabase.from('timetables').delete().eq('id', id).eq('user_id', req.userId);
 
   if (error) {
     return res.status(500).json({ error: error.message });
@@ -130,3 +134,5 @@ export const deleteTimetable = async (req: Request, res: Response) => {
 
   res.status(204).send();
 };
+
+

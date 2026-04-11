@@ -7,9 +7,7 @@ export interface Subject {
   code: string;
   hours: number;
   credits?: number;            // credit points (e.g. 3, 4)
-  /** Explicit weekly period quota; overrides `hours` in the engine when set. */
   weeklyPeriods?: number;
-  /** When true the subject is treated as a fixed/non-flexible slot (Library, NPTEL, etc.) */
   isFixed?: boolean;
   priority: Priority;
   color: string;
@@ -20,6 +18,7 @@ export interface FacultyMember {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   subjects: string[]; // IDs of subjects
   availability: string[]; // e.g., ["Monday", "Tuesday"]
 }
@@ -59,6 +58,10 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string;
+  lastLogin?: string;
+  location?: string;
+  jobTitle?: string;
 }
 
 export interface Break {
@@ -68,12 +71,43 @@ export interface Break {
   endTime: string;
 }
 
+export interface AcademicPreferences {
+  defaultClassStrength: number;
+  maxPeriodsPerDay: number;
+  preferredSubjectsPerDay: number;
+  allowConsecutiveSubjects: boolean;
+}
+
+export interface TimetableRules {
+  strictScheduling: boolean;
+  flexibleBreaks: boolean;
+  prioritizeMorning: boolean;
+  facultyWorkloadBalance: number; // 0 to 100
+}
+
+export interface NotificationSettings {
+  successAlerts: boolean;
+  errorAlerts: boolean;
+  autoSaveIndicator: boolean;
+}
+
+export interface AppearanceSettings {
+  primaryColor: string;
+  density: 'compact' | 'comfortable';
+  animations: boolean;
+}
+
 export interface CollegeSettings {
   workingDays: string[];
   startTime: string;
   endTime: string;
   periodDuration: number; // in minutes
   breaks: Break[];
+  academic: AcademicPreferences;
+  rules: TimetableRules;
+  notifications: NotificationSettings;
+  appearance: AppearanceSettings;
+  version: string;
 }
 
 export interface AppState {
@@ -85,5 +119,5 @@ export interface AppState {
   user: User | null;
   isAuthenticated: boolean;
   settings: CollegeSettings;
-  theme?: 'light' | 'dark' | 'system';
+  theme: 'light' | 'dark' | 'system';
 }

@@ -1,37 +1,31 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  BookOpen, 
-  Users, 
-  School, 
-  DoorOpen, 
-  Sparkles, 
-  CalendarDays, 
+import {
+  LayoutDashboard,
+  BookOpen,
+  Users,
+  School,
+  DoorOpen,
+  Sparkles,
+  CalendarDays,
   LogOut,
   Calendar,
+  Settings,
   ChevronLeft,
   ChevronRight,
-  Menu,
-  X
+  X,
 } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
 import { useApp } from '../context/AppContext';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import { ConfirmModal } from './UI';
 
 const menuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: BookOpen, label: 'Subjects', path: '/subjects' },
-  { icon: Users, label: 'Faculty', path: '/faculty' },
-  { icon: School, label: 'Classes', path: '/classes' },
-  { icon: DoorOpen, label: 'Rooms', path: '/rooms' },
-  { icon: Sparkles, label: 'Generate', path: '/generate' },
-  { icon: CalendarDays, label: 'View Timetable', path: '/view-timetable' },
-  { icon: Calendar, label: 'Settings', path: '/settings' },
+  { icon: LayoutDashboard, label: 'Dashboard',      path: '/' },
+  { icon: BookOpen,        label: 'Subjects',        path: '/subjects' },
+  { icon: Users,           label: 'Faculty',         path: '/faculty' },
+  { icon: School,          label: 'Classes',         path: '/classes' },
+  { icon: DoorOpen,        label: 'Rooms',           path: '/rooms' },
+  { icon: Sparkles,        label: 'Generate',        path: '/generate' },
+  { icon: CalendarDays,    label: 'View Timetable',  path: '/view-timetable' },
 ];
 
 interface SidebarProps {
@@ -44,114 +38,300 @@ interface SidebarProps {
 export default function Sidebar({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen }: SidebarProps) {
   const { logout, user } = useApp();
   const navigate = useNavigate();
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const handleLogout = () => { logout(); navigate('/login'); };
 
   return (
     <>
-      {/* Mobile Overlay */}
       {isMobileOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden"
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(26,23,16,0.4)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 40,
+          }}
           onClick={() => setIsMobileOpen(false)}
         />
       )}
 
-      <aside className={cn(
-        "fixed left-0 top-0 h-screen bg-dark-bg text-text-muted flex flex-col border-r border-dark-border z-50 transition-all duration-300",
-        isCollapsed ? "w-20" : "w-64",
-        isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-      )}>
-        {/* Toggle Button (Desktop) */}
-        <button 
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute -right-3 top-10 w-6 h-6 bg-brand-500 rounded-full hidden lg:flex items-center justify-center text-white shadow-lg hover:scale-110 transition-transform z-50"
-        >
-          {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
-
-        {/* Close Button (Mobile) */}
-        <button 
-          onClick={() => setIsMobileOpen(false)}
-          className="absolute right-4 top-4 lg:hidden text-slate-400 hover:text-text-header"
-        >
-          <X className="w-6 h-6" />
-        </button>
-
-        <div className={cn("p-8 flex items-center gap-4 overflow-hidden", isCollapsed && "justify-center px-0")}>
-          <div className="w-10 h-10 bg-brand-500 rounded-2xl flex items-center justify-center shadow-xl shadow-brand-500/30 shrink-0">
-            <Calendar className="text-white w-6 h-6" />
-          </div>
-          {!isCollapsed && (
-            <div className="whitespace-nowrap">
-              <h1 className="text-text-header text-lg font-display font-bold leading-tight">TimeTable AI</h1>
-              <p className="text-[10px] text-text-muted font-bold uppercase tracking-widest">Smart Scheduling</p>
+      <aside
+        style={{
+          position: 'fixed', top: 0, left: 0,
+          height: '100vh',
+          width: isCollapsed ? 'var(--sidebar-w-collapsed)' : 'var(--sidebar-w)',
+          background: 'var(--surface)',
+          borderRight: '1.5px solid var(--border)',
+          display: 'flex', flexDirection: 'column',
+          zIndex: 50,
+          transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s',
+          overflow: 'visible',
+          transform: isMobileOpen ? 'translateX(0)' : 'translateX(-100%)',
+        }}
+        className="lg-sidebar"
+      >
+        <div style={{
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: isCollapsed ? 'center' : 'space-between',
+          borderBottom: '1.5px solid var(--border)',
+          minHeight: 68,
+          padding: isCollapsed ? '0' : '0 16px',
+        }}>
+          <div style={{ 
+            display: 'flex', alignItems: 'center', gap: 12,
+            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}>
+            <div className="logo-badge" style={{ margin: 0 }}>
+              <Calendar style={{ width: 20, height: 20 }} />
             </div>
-          )}
+            {!isCollapsed && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', whiteSpace: 'nowrap', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                  Timegen
+                </div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 2 }}>
+                  Smart Scheduling
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            style={{
+              position: isCollapsed ? 'absolute' : 'relative',
+              right: isCollapsed ? -12 : 'auto', // Push to the right edge when collapsed
+              width: 26, height: 26,
+              borderRadius: '50%',
+              background: 'var(--accent)',
+              border: '2px solid var(--surface)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              color: 'var(--accent-text)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              zIndex: 10,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+            className="desktop-only"
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed
+              ? <ChevronRight style={{ width: 14, height: 14 }} />
+              : <ChevronLeft  style={{ width: 14, height: 14 }} />
+            }
+          </button>
+
+          <button
+            onClick={() => setIsMobileOpen(false)}
+            style={{
+              background: 'var(--surface-2)', border: '1.5px solid var(--border)', borderRadius: 8, cursor: 'pointer',
+              color: 'var(--text-primary)', width: 28, height: 28, 
+              display: 'none', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.1s ease',
+              marginLeft: 'auto'
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'var(--surface-2)'}
+            className="mobile-close-btn"
+          >
+            <X style={{ width: 16, height: 16 }} />
+          </button>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+        <nav style={{ flex: 1, padding: '16px 12px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {menuItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === '/'}
               onClick={() => setIsMobileOpen(false)}
-              className={({ isActive }) => cn(
-                "flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 group relative",
-                isActive 
-                  ? "bg-brand-500 text-white shadow-lg shadow-brand-500/20" 
-                  : "hover:bg-brand-500/10 hover:text-brand-600",
-                isCollapsed && "justify-center px-0"
-              )}
+              style={({ isActive }) => ({
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '10px 12px',
+                justifyContent: isCollapsed ? 'center' : 'flex-start',
+                borderRadius: 10,
+                textDecoration: 'none',
+                fontWeight: isActive ? 600 : 500,
+                fontSize: '0.875rem',
+                color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                background: isActive ? 'var(--accent-muted)' : 'transparent',
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+              })}
+              className="nav-link-item"
             >
               {({ isActive }) => (
                 <>
-                  <item.icon className={cn(
-                    "w-5 h-5 transition-colors shrink-0",
-                    isActive ? "text-white" : "text-text-muted group-hover:text-brand-600"
-                  )} />
-                  {!isCollapsed && <span className="whitespace-nowrap font-medium">{item.label}</span>}
-                  {isCollapsed && isActive && (
-                    <div className="absolute left-0 w-1 h-6 bg-white rounded-r-full" />
+                  {isActive && (
+                    <div style={{
+                      position: 'absolute', left: 0, top: '20%', height: '60%', width: 4,
+                      background: 'var(--accent)', borderRadius: '0 4px 4px 0'
+                    }} />
                   )}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, flexShrink: 0 }}>
+                    <item.icon
+                      style={{
+                        width: 18, height: 18,
+                        color: isActive ? 'var(--accent-text)' : 'var(--text-secondary)',
+                        transition: 'color 0.15s ease'
+                      }}
+                    />
+                  </div>
+                  {!isCollapsed && <span style={{ transition: 'color 0.15s ease' }}>{item.label}</span>}
                 </>
               )}
             </NavLink>
           ))}
         </nav>
 
-        <div className={cn("p-4 mt-auto border-t border-dark-border", isCollapsed && "px-2")}>
-          {user && (
-            <div className={cn(
-              "flex items-center gap-3 mb-4 p-3 rounded-2xl bg-dark-surface border border-dark-border",
-              isCollapsed && "justify-center px-0"
-            )}>
-              <div className="w-10 h-10 bg-brand-500/10 rounded-xl flex items-center justify-center text-brand-400 text-sm font-bold shrink-0 border border-brand-500/20">
-                {user.name.charAt(0)}
-              </div>
-              {!isCollapsed && (
-                <div className="overflow-hidden flex-1">
-                  <p className="text-sm font-bold text-text-header truncate">{user.name}</p>
-                  <p className="text-[10px] text-text-muted truncate font-medium">{user.email}</p>
+        <div style={{
+          padding: '10px',
+          borderTop: '1.5px solid var(--border)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+        }}>
+          <NavLink
+            to="/settings"
+            onClick={() => setIsMobileOpen(false)}
+            style={({ isActive }) => ({
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '10px 12px',
+              justifyContent: isCollapsed ? 'center' : 'flex-start',
+              borderRadius: 10,
+              textDecoration: 'none',
+              fontWeight: isActive ? 600 : 500,
+              fontSize: '0.875rem',
+              color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+              background: isActive ? 'var(--accent-muted)' : 'transparent',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            })}
+            className="nav-link-item"
+          >
+            {({ isActive }) => (
+              <>
+                {isActive && (
+                  <div style={{
+                    position: 'absolute', left: 0, top: '20%', height: '60%', width: 4,
+                    background: 'var(--accent)', borderRadius: '0 4px 4px 0'
+                  }} />
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, flexShrink: 0 }}>
+                  <Settings style={{ width: 18, height: 18, color: isActive ? 'var(--accent-text)' : 'var(--text-secondary)', transition: 'color 0.15s ease' }} />
                 </div>
-              )}
+                {!isCollapsed && <span style={{ transition: 'color 0.15s ease' }}>Settings</span>}
+              </>
+            )}
+          </NavLink>
+
+          <button
+            onClick={() => setIsLogoutModalOpen(true)}
+            style={{
+              position: 'relative',
+              display: 'flex', alignItems: 'center',
+              gap: 12,
+              padding: '10px 12px',
+              justifyContent: isCollapsed ? 'center' : 'flex-start',
+              borderRadius: 10,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              width: '100%',
+              fontWeight: 500, fontSize: '0.875rem',
+              color: 'var(--text-secondary)',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            }}
+            onMouseEnter={e => { 
+              (e.currentTarget as HTMLElement).style.background = 'var(--danger-bg)'; 
+              (e.currentTarget as HTMLElement).style.color = 'var(--danger-text)'; 
+              const icon = e.currentTarget.querySelector('svg');
+              if(icon) icon.style.color = 'inherit';
+            }}
+            onMouseLeave={e => { 
+              (e.currentTarget as HTMLElement).style.background = 'transparent'; 
+              (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; 
+              const icon = e.currentTarget.querySelector('svg');
+              if(icon) icon.style.color = 'var(--text-secondary)';
+            }}
+            className="nav-link-item logout-nav-item"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, flexShrink: 0 }}>
+              <LogOut style={{ width: 18, height: 18, color: 'var(--text-secondary)', transition: 'color 0.15s ease' }} />
+            </div>
+            {!isCollapsed && <span style={{ transition: 'color 0.15s ease' }}>Log out</span>}
+          </button>
+
+          {user && !isCollapsed && (
+            <div style={{
+              marginTop: 4,
+              padding: '10px 12px',
+              background: 'var(--surface-2)',
+              borderRadius: 10,
+              border: '1.5px solid var(--border)',
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <div style={{
+                width: 32, height: 32,
+                background: 'var(--accent)',
+                borderRadius: 999,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: '0.875rem', color: 'var(--accent-text)',
+                flexShrink: 0,
+              }}>
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ overflow: 'hidden' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div>
+              </div>
             </div>
           )}
-          <button 
-            onClick={handleLogout}
-            className={cn(
-              "flex items-center gap-3 w-full px-4 py-3.5 rounded-2xl text-text-muted hover:bg-red-500/10 hover:text-red-400 transition-all duration-300 group",
-              isCollapsed && "justify-center px-0"
-            )}
-          >
-            <LogOut className="w-5 h-5 group-hover:rotate-12 transition-transform shrink-0" />
-            {!isCollapsed && <span className="font-bold text-sm uppercase tracking-wider">Logout</span>}
-          </button>
         </div>
+
       </aside>
+
+      <ConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={() => {
+          setIsLogoutModalOpen(false);
+          handleLogout();
+        }}
+        title="Confirm Logout"
+        message="Are you sure you want to log out?"
+        confirmText="Log out"
+        type="danger"
+      />
+
+      <style>{`
+        @media (min-width: 1024px) {
+          .lg-sidebar { transform: translateX(0) !important; }
+          .mobile-close-btn { display: none !important; }
+          .desktop-only { display: flex !important; }
+        }
+        @media (max-width: 1023px) {
+          .desktop-only { display: none !important; }
+          .mobile-close-btn { display: flex !important; }
+        }
+        .nav-link-item:hover {
+          background: var(--surface-2) !important;
+          color: var(--text-primary) !important;
+        }
+      `}</style>
     </>
   );
 }

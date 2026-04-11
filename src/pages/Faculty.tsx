@@ -1,204 +1,518 @@
-import React, { useState } from 'react';
-import { Card, Button, EmptyState, Modal, Badge } from '../components/UI';
-import { Users, Plus, Edit2, Trash2, Mail, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal } from '../components/UI';
+import { Users, Plus, Edit2, Trash2, Mail, Phone, MessageCircle, MoreVertical, Check, Square, CheckSquare, Search } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useSelection } from '../hooks/useSelection';
 import { FacultyMember } from '../types';
 
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 export default function Faculty() {
-  const { faculty, subjects, addFaculty, updateFaculty, deleteFaculty } = useApp();
+  const { faculty, subjects, addFaculty, updateFaculty, deleteFaculty, deleteFacultyBatch } = useApp();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingFaculty, setEditingFaculty] = useState<FacultyMember | null>(null);
+  const {
+    selectedIds, isSelected, toggleItem,
+    selectAll, deselectAll, count,
+    isSelectionMode, exitSelectionMode, selectSingle
+  } = useSelection(faculty);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('all');
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    onConfirm: () => void;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    onConfirm: () => { },
+    title: '',
+    message: ''
+  });
 
-  const handleAdd = () => {
-    setEditingFaculty(null);
-    setIsModalOpen(true);
+  const [errorModal, setErrorModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'error' | 'offline' | 'session';
+    onRetry?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'error'
+  });
+
+  const navigate = useNavigate();
+
+  const handleError = (err: any, retryFn?: () => void) => {
+    const isOffline = !navigator.onLine || err.message?.toLowerCase().includes('failed to fetch');
+    const isUnauthorized = err.message?.includes('401') || err.message?.toLowerCase().includes('unauthorized');
+
+    if (isOffline) {
+      setErrorModal({
+        isOpen: true,
+        title: "You're offline",
+        message: "Please check your internet connection and try again.",
+        type: 'offline',
+        onRetry: retryFn
+      });
+    } else if (isUnauthorized) {
+      setErrorModal({
+        isOpen: true,
+        title: "Session expired",
+        message: "Your session has expired. Please login again to continue.",
+        type: 'session',
+        onRetry: () => navigate('/login')
+      });
+    } else {
+      setErrorModal({
+        isOpen: true,
+        title: "Something went wrong",
+        message: "We encountered an unexpected error. Please try again later.",
+        type: 'error',
+        onRetry: retryFn
+      });
+    }
   };
 
-  const handleEdit = (f: FacultyMember) => {
-    setEditingFaculty(f);
-    setIsModalOpen(true);
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveMenuId(null);
+        exitSelectionMode();
+      }
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (activeMenuId && !(e.target as HTMLElement).closest('.faculty-menu-container')) {
+        setActiveMenuId(null);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleEsc);
+      window.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [activeMenuId, exitSelectionMode]);
+
+  const handleAdd = () => { setEditingFaculty(null); setIsModalOpen(true); };
+  const handleEdit = (f: FacultyMember) => { setEditingFaculty(f); setIsModalOpen(true); };
+
+
+  const handleBulkDelete = async () => {
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Faculty',
+      message: `Are you sure you want to delete ${selectedIds.length} faculty members? This action cannot be undone.`,
+      onConfirm: async () => {
+        try {
+          await deleteFacultyBatch(selectedIds);
+          exitSelectionMode();
+          setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        } catch (err: any) {
+          handleError(err, handleBulkDelete);
+        }
+      }
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const selectedSubjects = Array.from(formData.getAll('subjects')) as string[];
-    const selectedAvailability = Array.from(formData.getAll('availability')) as string[];
-    
     const data = {
       name: formData.get('name') as string,
       email: formData.get('email') as string,
-      subjects: selectedSubjects,
-      availability: selectedAvailability,
+      phone: formData.get('phone') as string,
+      subjects: Array.from(formData.getAll('subjects')) as string[],
+      availability: Array.from(formData.getAll('availability')) as string[],
     };
-
     try {
-      if (editingFaculty) {
-        await updateFaculty(editingFaculty.id, data);
-      } else {
-        await addFaculty(data);
-      }
+      if (editingFaculty) { await updateFaculty(editingFaculty.id, data); }
+      else { await addFaculty(data as any); }
       setIsModalOpen(false);
-    } catch (error) {
-      console.error('Failed to save faculty', error);
-      window.alert('Could not save faculty to backend.');
+    } catch (err: any) {
+      handleError(err, () => {
+          console.log("Retrying save...");
+      });
     }
   };
 
+  const filteredFaculty = faculty.filter(f => {
+    const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      f.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSubject = subjectFilter === 'all' || f.subjects.includes(subjectFilter);
+    return matchesSearch && matchesSubject;
+  });
+
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'center' }}>
+        <BulkActionBar
+          selectedCount={count}
+          onDelete={handleBulkDelete}
+          onCancel={exitSelectionMode}
+          onSelectAll={selectAll}
+          onDeselectAll={deselectAll}
+          itemName="faculty"
+        />
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div>
-          <h1 className="text-2xl md:text-3xl font-display font-bold text-text-header">Faculty</h1>
-          <p className="text-sm md:text-base text-slate-500 font-medium">Manage faculty members and their availability</p>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>Faculty</h1>
+          <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '2px 0 0' }}>Manage faculty profiles, specialization, and availability</p>
         </div>
-        <Button icon={Plus} onClick={handleAdd} className="w-full md:w-auto whitespace-nowrap shadow-xl shadow-brand-500/20">
-          Add Faculty
-        </Button>
-      </header>
-
-      {faculty.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {faculty.map((f) => (
-            <div key={f.id}>
-              <Card className="group hover:border-brand-500/30 transition-all duration-300">
-                <div className="flex justify-between items-start mb-5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-brand-500/10 rounded-2xl flex items-center justify-center text-brand-400 border border-brand-500/20 shadow-lg font-bold text-xl">
-                      {f.name.charAt(0)}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-text-header text-lg">{f.name}</h3>
-                      <div className="flex items-center gap-2 text-slate-500 text-xs font-medium mt-1">
-                        <Mail className="w-3 h-3" />
-                        {f.email}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                    <button onClick={() => handleEdit(f)} className="p-2.5 text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 rounded-xl transition-all">
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await deleteFaculty(f.id);
-                        } catch (error) {
-                          console.error('Failed to delete faculty', error);
-                          window.alert('Could not delete faculty from backend.');
-                        }
-                      }}
-                      className="p-2.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-3">Specializations</p>
-                    <div className="flex flex-wrap gap-2">
-                      {f.subjects.map(sid => {
-                        const s = subjects.find(sub => sub.id === sid);
-                        return s ? <span key={sid}><Badge variant="info" className="bg-blue-500/5 border-blue-500/10">{s.name}</Badge></span> : null;
-                      })}
-                      {f.subjects.length === 0 && <span className="text-xs text-slate-600 italic">No subjects assigned</span>}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-3">Availability</p>
-                    <div className="flex flex-wrap gap-2">
-                      {f.availability.map(day => (
-                        <span key={day}><Badge variant="neutral">{day}</Badge></span>
-                      ))}
-                      {f.availability.length === 0 && <span className="text-xs text-slate-600 italic">No availability set</span>}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          ))}
+        <div style={{ display: 'flex', gap: 10 }}>
+          {!isSelectionMode && faculty.length > 0 && (
+            <button
+              className="btn btn-outline"
+              style={{ borderRadius: 999, fontSize: '0.825rem' }}
+              onClick={selectAll}
+            >
+              Select All
+            </button>
+          )}
+          <button className="btn btn-primary" style={{ borderRadius: 999 }} onClick={handleAdd}>
+            <Plus style={{ width: 16, height: 16 }} /> Add Faculty
+          </button>
         </div>
-      ) : (
-        <Card>
-          <EmptyState 
-            icon={Users}
-            title="No faculty members yet"
-            description="Add faculty members with their subjects and scheduling preferences."
-            actionLabel="Add First Faculty"
-            onAction={handleAdd}
-          />
-        </Card>
+      </div>
+
+      {faculty.length > 0 && (
+        <div className="search-filter-container">
+          <div className="search-input-wrapper">
+            <Search style={{ width: 18, height: 18, color: 'var(--text-secondary)' }} />
+            <input 
+              type="text" 
+              placeholder="Search by name or email…" 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <select 
+            className="filter-select"
+            value={subjectFilter}
+            onChange={e => setSubjectFilter(e.target.value)}
+          >
+            <option value="all">All Subjects</option>
+            {subjects.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
       )}
 
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title={editingFaculty ? 'Edit Faculty' : 'Add New Faculty'}
-      >
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-bold text-text-main mb-2">Full Name</label>
-              <input 
-                name="name"
-                defaultValue={editingFaculty?.name}
-                required
-                className="w-full px-4 py-3 bg-dark-bg border border-dark-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-text-main mb-2">Email Address</label>
-              <input 
-                name="email"
-                type="email"
-                defaultValue={editingFaculty?.email}
-                required
-                className="w-full px-4 py-3 bg-dark-bg border border-dark-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-text-main mb-2">Subjects Expertise</label>
-              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-dark-bg rounded-xl border border-dark-border">
-                {subjects.map(s => (
-                  <label key={s.id} className="flex items-center gap-2 text-sm text-text-main cursor-pointer hover:text-brand-600">
-                    <input 
-                      type="checkbox" 
-                      name="subjects" 
-                      value={s.id} 
-                      defaultChecked={editingFaculty?.subjects.includes(s.id)}
-                      className="rounded border-slate-300 text-brand-500 focus:ring-brand-500"
-                    />
-                    {s.name}
-                  </label>
-                ))}
+      {faculty.length === 0 ? (
+        <EmptyState 
+          icon={Users} 
+          title="No faculty members yet" 
+          description="Add teachers and professors to build your academic team. You can assign subjects and set availability after adding them." 
+          actionLabel="Add First Member" 
+          onAction={handleAdd} 
+        />
+      ) : filteredFaculty.length === 0 ? (
+        <div style={{ padding: '60px 0' }}>
+          <EmptyState 
+            icon={Search} 
+            title="No matches found" 
+            description="We couldn't find any faculty members matching your search query or subject filter." 
+            actionLabel="Clear Filters" 
+            onAction={() => { setSearchQuery(''); setSubjectFilter('all'); }} 
+          />
+        </div>
+      ) : (
+        <div className="faculty-grid">
+          {filteredFaculty.map(f => (
+            <motion.div
+              key={f.id}
+              layout
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              whileHover={{ y: -4, boxShadow: 'var(--shadow-elevated)', borderColor: 'var(--border-2)' }}
+              style={{
+                background: isSelected(f.id) ? 'var(--accent-muted)' : 'var(--surface)',
+                border: isSelected(f.id) ? '2px solid var(--accent)' : '1.5px solid var(--border)',
+                borderRadius: 20, padding: '20px',
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                position: 'relative',
+                cursor: isSelectionMode ? 'pointer' : 'default',
+                outline: 'none',
+                boxShadow: isSelected(f.id) ? '0 10px 25px rgba(0,0,0,0.1)' : 'none'
+              }}
+              tabIndex={0}
+              onClick={() => {
+                if (isSelectionMode) {
+                  toggleItem(f.id);
+                }
+              }}
+              onKeyDown={e => {
+                if (isSelectionMode && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  toggleItem(f.id);
+                }
+              }}
+            >
+              {isSelectionMode && isSelected(f.id) && (
+                <div style={{
+                  position: 'absolute', top: -10, right: -10,
+                  width: 24, height: 24, borderRadius: 12,
+                  background: 'var(--accent)', color: 'var(--accent-text)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  zIndex: 2,
+                }}>
+                  <Check style={{ width: 14, height: 14, strokeWidth: 3 }} />
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{
+                    width: 48, height: 48, borderRadius: 14,
+                    background: 'var(--accent)', color: 'var(--accent-text)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 800, fontSize: '1.25rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                    flexShrink: 0,
+                  }}>
+                    {f.name.charAt(0)}
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 750, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>{f.name}</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <Phone style={{ width: 12, height: 12, color: 'var(--text-placeholder)' }} />
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{f.phone || 'No phone'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="faculty-menu-container" style={{ position: 'relative' }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveMenuId(activeMenuId === f.id ? null : f.id);
+                    }}
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--text-secondary)',
+                      cursor: 'pointer', padding: 6, borderRadius: 8,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <MoreVertical style={{ width: 20, height: 20 }} />
+                  </button>
+
+                  <AnimatePresence>
+                    {activeMenuId === f.id && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                        transition={{ duration: 0.15, ease: 'easeOut' }}
+                        className="faculty-card-dropdown"
+                        style={{
+                          position: 'absolute', top: '100%', right: 0,
+                          width: 170, background: 'var(--surface)',
+                          border: '1.5px solid var(--border)', borderRadius: 14,
+                          boxShadow: '0 12px 35px rgba(0,0,0,0.15)',
+                          padding: 6, zIndex: 100,
+                          marginTop: 6,
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <button
+                          className="menu-item"
+                          onClick={() => {
+                            if (isSelectionMode) toggleItem(f.id);
+                            else selectSingle(f.id);
+                            setActiveMenuId(null);
+                          }}
+                        >
+                          {isSelected(f.id) ? (
+                            <><CheckSquare className="menu-icon" /> Deselect</>
+                          ) : (
+                            <><Square className="menu-icon" /> Select</>
+                          )}
+                        </button>
+                        <div style={{ height: 1.5, background: 'var(--border)', margin: '4px 0', opacity: 0.5 }} />
+                        <button
+                          className="menu-item"
+                          onClick={() => {
+                            const link = `https://wa.me/${f.phone?.replace(/[^0-9]/g, '')}`;
+                            window.open(link, '_blank');
+                            setActiveMenuId(null);
+                          }}
+                        >
+                          <MessageCircle className="menu-icon" /> WhatsApp
+                        </button>
+                        <button
+                          className="menu-item"
+                          onClick={() => { handleEdit(f); setActiveMenuId(null); }}
+                        >
+                          <Edit2 className="menu-icon" /> Edit Profile
+                        </button>
+                        <button
+                          className="menu-item menu-item-danger"
+                          onClick={async () => {
+                            setDeleteConfirm({
+                              isOpen: true,
+                              title: 'Delete Faculty',
+                              message: `Are you sure you want to delete ${f.name}? This action cannot be undone.`,
+                              onConfirm: async () => {
+                                try {
+                                  await deleteFaculty(f.id);
+                                  setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                } catch (err: any) {
+                                  handleError(err, () => {
+                                      deleteFaculty(f.id);
+                                      setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                  });
+                                }
+                              }
+                            });
+                            setActiveMenuId(null);
+                          }}
+                        >
+                          <Trash2 className="menu-icon" /> Remove
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16, minHeight: 24 }}>
+                {f.subjects.slice(0, 3).map(sid => {
+                  const s = subjects.find(sub => sub.id === sid);
+                  return s ? (
+                    <Badge key={sid} variant="accent" style={{ fontSize: '0.7rem' }}>{s.name}</Badge>
+                  ) : null;
+                })}
+                {f.subjects.length > 3 && (
+                  <Badge variant="neutral" style={{ fontSize: '0.7rem' }}>+{f.subjects.length - 3} more</Badge>
+                )}
+                {f.subjects.length === 0 && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-placeholder)', fontStyle: 'italic' }}>No specializations</span>
+                )}
+              </div>
+
+              <div style={{ borderTop: '1.5px solid var(--border)', paddingTop: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 10,
+                    background: 'var(--surface-2)', border: '1.5px solid var(--border)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    <Mail style={{ width: 14, height: 14, color: 'var(--text-secondary)' }} />
+                  </div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {f.email}
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingFaculty ? 'Edit Faculty' : 'Add New Faculty'}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="field-label">Full Name</label>
+              <input name="name" defaultValue={editingFaculty?.name} required placeholder="Dr. Jane Smith" className="field-input" style={{ width: '100%' }} />
             </div>
             <div>
-              <label className="block text-sm font-bold text-text-main mb-2">Availability Days</label>
-              <div className="flex flex-wrap gap-3">
-                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
-                  <label key={day} className="flex items-center gap-2 text-sm text-text-main cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      name="availability" 
-                      value={day} 
-                      defaultChecked={editingFaculty?.availability.includes(day)}
-                      className="rounded border-slate-300 text-brand-500 focus:ring-brand-500"
-                    />
-                    {day}
-                  </label>
-                ))}
-              </div>
+              <label className="field-label">Email Address</label>
+              <input name="email" type="email" defaultValue={editingFaculty?.email} required placeholder="jane.smith@university.edu" className="field-input" style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label className="field-label">Phone Number</label>
+              <input name="phone" defaultValue={editingFaculty?.phone} placeholder="+1 234 567 890" className="field-input" style={{ width: '100%' }} />
             </div>
           </div>
-          <div className="flex gap-3 pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-            <Button type="submit" className="flex-1">{editingFaculty ? 'Save Changes' : 'Add Faculty'}</Button>
+          <div>
+            <label className="field-label">Subject Specializations</label>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10,
+              maxHeight: 180, overflowY: 'auto', padding: '12px',
+              background: 'var(--surface-2)', borderRadius: 12, border: '1.5px solid var(--border)'
+            }}>
+              {subjects.map(s => (
+                <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.875rem', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                  <input type="checkbox" name="subjects" value={s.id} defaultChecked={editingFaculty?.subjects.includes(s.id)} style={{ accentColor: 'var(--accent)' }} />
+                  {s.name}
+                </label>
+              ))}
+              {subjects.length === 0 && (
+                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '10px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                  Please add subjects first in the Subjects page.
+                </div>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Working Days Availability</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {DAYS.map(day => (
+                <label key={day} className={`day-chip ${editingFaculty?.availability.includes(day) ? 'selected' : ''}`} style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10,
+                  background: 'var(--surface-2)', border: '1.5px solid var(--border)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
+                }}>
+                  <input type="checkbox" name="availability" value={day} defaultChecked={editingFaculty ? editingFaculty.availability.includes(day) : true} style={{ display: 'none' }} />
+                  {day.slice(0, 3)}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 12, marginTop: 10 }}>
+            <button type="button" className="btn btn-outline" style={{ flex: 1, borderRadius: 12 }} onClick={() => setIsModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1, borderRadius: 12 }}>
+              {editingFaculty ? 'Save Profile' : 'Add Faculty'}
+            </button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={deleteConfirm.onConfirm}
+        title={deleteConfirm.title}
+        message={deleteConfirm.message}
+      />
+
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        title={errorModal.title}
+        message={errorModal.message}
+        type={errorModal.type}
+        onRetry={errorModal.onRetry}
+        onClose={() => setErrorModal(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      <style>{`
+        .faculty-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        @media (min-width: 768px) {
+          .faculty-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (min-width: 1200px) {
+          .faculty-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        .day-chip:has(input:checked) {
+          background: var(--accent) !important;
+          color: var(--accent-text) !important;
+          border-color: var(--accent-border) !important;
+        }
+        @media (max-width: 640px) {
+          .search-filter-container { flex-direction: column; align-items: stretch; gap: 8px; }
+          .filter-select { width: 100%; }
+        }
+      `}</style>
     </div>
   );
 }

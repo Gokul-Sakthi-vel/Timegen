@@ -7,22 +7,65 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const { isAuthenticated, authLoading } = useApp();
   const location = useLocation();
 
-  // Wait for Supabase session check before making any routing decision.
-  // Without this, Google OAuth redirects back to "/" → ProtectedRoute sees
-  // isAuthenticated=false and immediately redirects to /login before
-  // onAuthStateChange has a chance to fire.
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-dark-bg flex flex-col items-center justify-center gap-4">
-        <div className="w-14 h-14 bg-brand-500 rounded-2xl flex items-center justify-center shadow-2xl shadow-brand-500/30 animate-pulse">
-          <Calendar className="text-white w-7 h-7" />
+      <div style={{
+        minHeight: '100vh',
+        background: 'var(--bg, #F4F1EC)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 24,
+        padding: 24,
+        fontFamily: 'var(--font-sans)',
+        position: 'relative',
+        overflow: 'hidden'
+      }}>
+        {/* Subtle Skeleton Backdrop */}
+        <div style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          opacity: 0.1,
+          pointerEvents: 'none',
+          padding: '40px',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateRows: 'repeat(3, 1fr)',
+          gap: '24px'
+        }}>
+          {[...Array(6)].map((_, i) => (
+            <div key={i} style={{ background: 'var(--text-secondary)', borderRadius: '16px' }} />
+          ))}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-brand-500 animate-bounce [animation-delay:0ms]" />
-          <div className="w-2 h-2 rounded-full bg-brand-500 animate-bounce [animation-delay:150ms]" />
-          <div className="w-2 h-2 rounded-full bg-brand-500 animate-bounce [animation-delay:300ms]" />
+
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
+          <div className="minimal-spinner" />
+          <p style={{ 
+            fontSize: '0.875rem', 
+            fontWeight: 500, 
+            color: 'var(--text-secondary, #6B6454)', 
+            margin: 0,
+            letterSpacing: '0.02em'
+          }}>
+            Loading your workspace...
+          </p>
         </div>
-        <p className="text-slate-500 text-sm font-medium">Verifying session…</p>
+
+        <style>{`
+          .minimal-spinner {
+            width: 28px;
+            height: 28px;
+            border: 2px solid rgba(242, 201, 76, 0.15);
+            border-top: 2px solid var(--accent, #F2C94C);
+            border-radius: 50%;
+            animation: minimal-spin 0.8s linear infinite;
+          }
+          @keyframes minimal-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }

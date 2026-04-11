@@ -1,119 +1,337 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Calendar, Mail, Lock, User, ArrowRight, ShieldCheck } from 'lucide-react';
-import { Button } from '../components/UI';
-import { motion } from 'motion/react';
+import { 
+  Calendar, 
+  Mail, 
+  Lock, 
+  User, 
+  ArrowRight, 
+  AlertCircle, 
+  Eye, 
+  EyeOff, 
+  Check,
+  Shield,
+  Zap,
+  Loader2
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../context/AppContext';
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { signup } = useApp();
+  const { signup, loginWithGoogle } = useApp();
+  
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const validation = useMemo(() => {
+    const errors: Record<string, string> = {};
+    
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+    
+    const rules = {
+      length: password.length >= 8,
+      upper: /[A-Z]/.test(password),
+      number: /[0-9]/.test(password),
+      special: /[^A-Za-z0-9]/.test(password)
+    };
+    
+    return { errors, rules };
+  }, [email, password]);
+
+  const passwordStrength = useMemo(() => {
+    if (!password) return { label: '', score: 0, color: 'transparent' };
+    const { rules } = validation;
+    const metCount = Object.values(rules).filter(Boolean).length;
+    
+    if (metCount <= 1) return { label: 'Weak', score: 25, color: '#ef4444' };
+    if (metCount <= 3) return { label: 'Medium', score: 60, color: '#f59e0b' };
+    return { label: 'Strong', score: 100, color: '#10b981' };
+  }, [password, validation]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (Object.keys(validation.errors).length > 0) return;
+    
     setError('');
     setIsSubmitting(true);
-
     try {
       await signup(name, email, password);
       navigate('/login', { replace: true });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Signup failed. Please try again.';
-      setError(message);
+      const msg = err instanceof Error ? err.message : 'Signup failed';
+      if (msg.includes('already registered')) {
+        setError('This email is already registered. Try signing in.');
+      } else {
+        setError('Something went wrong. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-dark-bg flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-sm"
+    <div style={{
+      minHeight: '100vh',
+      background: 'var(--bg)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px 16px',
+    }}>
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        style={{ width: '100%', maxWidth: 440 }}
       >
-        <div className="text-center mb-8">
-          <div className="inline-flex w-16 h-16 bg-brand-500 rounded-2xl items-center justify-center shadow-2xl shadow-brand-500/30 mb-6">
-            <Calendar className="text-white w-8 h-8" />
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ display: 'inline-flex', marginBottom: 12 }}>
+            <motion.div 
+              whileHover={{ scale: 1.05, rotate: 5 }}
+              className="logo-badge" 
+              style={{ width: 44, height: 44, borderRadius: 12, fontSize: '1rem', boxShadow: '0 8px 16px rgba(242, 201, 76, 0.2)' }}
+            >
+              <Calendar style={{ width: 22, height: 22 }} />
+            </motion.div>
           </div>
-          <h1 className="text-3xl font-display font-bold text-text-header tracking-tight">Create Admin</h1>
-          <p className="text-slate-500 mt-2 font-medium uppercase tracking-widest text-xs">Join TimeTable AI</p>
+          <h1 style={{
+            fontSize: '1.75rem',
+            fontWeight: 800,
+            color: 'var(--text-primary)',
+            letterSpacing: '-0.04em',
+            margin: '0 0 6px',
+            lineHeight: 1.1
+          }}>
+            Get started with Timetable AI
+          </h1>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+            Build smart schedules in minutes
+          </p>
         </div>
 
-        <div className="bg-dark-surface rounded-3xl border border-dark-border shadow-2xl p-8">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div style={{
+          background: 'var(--surface)',
+          border: '1.5px solid var(--border)',
+          borderRadius: 20,
+          padding: '24px 28px',
+          boxShadow: 'var(--shadow-modal)',
+          position: 'relative',
+        }}>
+          <button
+            type="button"
+            onClick={loginWithGoogle}
+            className="btn btn-outline"
+            style={{ 
+              width: '100%', 
+              padding: '10px 20px', 
+              borderRadius: 10, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: 12, 
+              marginBottom: 16,
+              fontSize: '0.875rem',
+              fontWeight: 600,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            Continue with Google
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-placeholder)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>OR</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          </div>
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Full Name</label>
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Full Name</label>
+              <div style={{ position: 'relative' }}>
+                <User style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
                 <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="John Doe"
-                  className="w-full pl-12 pr-4 py-3 bg-dark-bg border border-dark-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main placeholder:text-slate-700 font-medium"
+                  type="text" required value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="e.g. Stephen Hawking"
+                  className="field-input" style={{ paddingLeft: 38, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem' }}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Work Email</label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Work Email</label>
+              <div style={{ position: 'relative' }}>
+                <Mail style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
                 <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="email" required value={email}
+                  onChange={e => setEmail(e.target.value)}
                   placeholder="admin@college.edu"
-                  className="w-full pl-12 pr-4 py-3 bg-dark-bg border border-dark-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main placeholder:text-slate-700 font-medium"
+                  className="field-input" style={{ 
+                    paddingLeft: 38, 
+                    borderRadius: 10,
+                    padding: '10px 14px 10px 38px',
+                    fontSize: '0.9rem',
+                    borderColor: validation.errors.email ? 'var(--danger-text)' : 'var(--border)'
+                  }}
                 />
               </div>
+              <AnimatePresence>
+                {validation.errors.email && (
+                  <motion.p 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    style={{ fontSize: '0.7rem', color: 'var(--danger-text)', margin: '4px 0 0', fontWeight: 500 }}
+                  >
+                    {validation.errors.email}
+                  </motion.p>
+                )}
+              </AnimatePresence>
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Password</label>
+              <div style={{ position: 'relative' }}>
+                <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
                 <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="********"
-                  className="w-full pl-12 pr-4 py-3 bg-dark-bg border border-dark-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-text-main placeholder:text-slate-700 font-medium"
+                  type={showPassword ? "text" : "password"} 
+                  required value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Min. 8 characters"
+                  className="field-input" style={{ paddingLeft: 38, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem' }}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center'
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
+
+              {password && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Strength</span>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: passwordStrength.color }}>{passwordStrength.label}</span>
+                  </div>
+                  <div style={{ height: 3, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden' }}>
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${passwordStrength.score}%`, backgroundColor: passwordStrength.color }}
+                      style={{ height: '100%' }}
+                    />
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginTop: 8 }}>
+                    {[
+                      { label: '8+ Chars', met: validation.rules.length },
+                      { label: 'Upper', met: validation.rules.upper },
+                      { label: 'Num', met: validation.rules.number },
+                      { label: 'Symbol', met: validation.rules.special },
+                    ].map(rule => (
+                      <div key={rule.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div style={{ 
+                          width: 12, height: 12, borderRadius: 99, 
+                          background: rule.met ? 'var(--success-bg)' : 'var(--surface-2)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.2s'
+                        }}>
+                          {rule.met && <Check size={8} color={rule.met ? 'var(--success-text)' : 'transparent'} />}
+                        </div>
+                        <span style={{ 
+                          fontSize: '0.65rem', 
+                          color: rule.met ? 'var(--text-primary)' : 'var(--text-placeholder)',
+                          fontWeight: rule.met ? 600 : 400
+                        }}>{rule.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-start gap-3 p-4 bg-dark-bg/50 rounded-xl border border-dark-border">
-              <ShieldCheck className="w-5 h-5 text-brand-500 shrink-0 mt-0.5" />
-              <p className="text-[10px] text-slate-500 leading-relaxed font-semibold uppercase tracking-wider">
-                By creating an account, you agree to our <a href="#" className="text-brand-500">Terms</a> and <a href="#" className="text-brand-500">Privacy</a>.
-              </p>
-            </div>
+            <AnimatePresence>
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 12px', borderRadius: 10,
+                    background: 'var(--danger-bg)', border: '1.5px solid var(--danger-border)',
+                  }}
+                >
+                  <AlertCircle style={{ width: 16, height: 16, color: 'var(--danger-text)', flexShrink: 0 }} />
+                  <p style={{ fontSize: '0.8rem', color: 'var(--danger-text)', margin: 0, fontWeight: 500 }}>{error}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            {error && <p className="text-sm text-red-500 font-medium">{error}</p>}
-
-            <Button type="submit" disabled={isSubmitting} className="w-full py-3 text-base shadow-2xl shadow-brand-500/30" icon={ArrowRight}>
-              {isSubmitting ? 'Creating Account...' : 'Create Account'}
-            </Button>
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+              type="submit"
+              disabled={isSubmitting || Object.keys(validation.errors).length > 0}
+              className="btn btn-primary"
+              style={{ width: '100%', padding: '12px 20px', fontSize: '0.9rem', borderRadius: 10, marginTop: 4, gap: 8 }}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="animate-spin" style={{ width: 18, height: 18 }} />
+                  Creating...
+                </>
+              ) : (
+                <>Continue <ArrowRight style={{ width: 16, height: 16 }} /></>
+              )}
+            </motion.button>
           </form>
 
-          <div className="mt-8 pt-8 border-t border-dark-border text-center">
-            <p className="text-sm text-slate-500 font-medium">
-              Already have an account?{' '}
-              <Link to="/login" className="font-bold text-brand-500 hover:text-brand-400 transition-colors">Sign In</Link>
-            </p>
-          </div>
+          <p style={{ textAlign: 'center', fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '16px 0 0' }}>
+            Already have an account?{' '}
+            <Link to="/login" style={{ fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>
+              Sign In
+            </Link>
+          </p>
         </div>
+
+        <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-placeholder)', marginTop: 16, lineHeight: 1.4 }}>
+          By joining, you agree to our Terms and Privacy.<br/>
+          © 2026 Timetable AI.
+        </p>
       </motion.div>
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        .field-input:focus {
+          border-color: var(--accent) !important;
+          box-shadow: 0 0 0 4px var(--accent-muted) !important;
+        }
+      `}</style>
     </div>
   );
 }
+

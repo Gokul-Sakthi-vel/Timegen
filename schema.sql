@@ -11,7 +11,9 @@ CREATE TABLE faculty (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   email TEXT,
-  availability TEXT[]
+  phone TEXT,
+  availability TEXT[],
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Subjects Table
@@ -20,15 +22,18 @@ CREATE TABLE subjects (
   name TEXT NOT NULL,
   code TEXT NOT NULL,
   hours INTEGER NOT NULL,
+  credits INTEGER,
   priority TEXT,
-  color TEXT
+  color TEXT,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Classes Table
 CREATE TABLE classes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  students_count INTEGER
+  students_count INTEGER,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Rooms Table
@@ -36,7 +41,8 @@ CREATE TABLE rooms (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   capacity INTEGER,
-  type TEXT
+  type TEXT,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Timetables Table
@@ -44,7 +50,8 @@ CREATE TABLE timetables (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now(),
-  timetable_data JSONB
+  timetable_data JSONB,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Join Table for Faculty and Subjects (Many-to-Many)
