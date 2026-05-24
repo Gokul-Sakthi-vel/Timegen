@@ -247,7 +247,8 @@ export default function Faculty() {
                 position: 'relative',
                 cursor: isSelectionMode ? 'pointer' : 'default',
                 outline: 'none',
-                boxShadow: isSelected(f.id) ? '0 10px 25px rgba(0,0,0,0.1)' : 'none'
+                boxShadow: isSelected(f.id) ? '0 10px 25px rgba(0,0,0,0.1)' : 'none',
+                overflow: 'visible'
               }}
               tabIndex={0}
               onClick={() => {
@@ -293,7 +294,7 @@ export default function Faculty() {
                     </div>
                   </div>
                 </div>
-                <div className="faculty-menu-container" style={{ position: 'relative' }}>
+                <div className="faculty-menu-container" style={{ position: 'relative', overflow: 'visible', zIndex: 0 }}>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -321,8 +322,9 @@ export default function Faculty() {
                           width: 170, background: 'var(--surface)',
                           border: '1.5px solid var(--border)', borderRadius: 14,
                           boxShadow: '0 12px 35px rgba(0,0,0,0.15)',
-                          padding: 6, zIndex: 100,
+                          padding: 6, zIndex: 110,
                           marginTop: 6,
+                          overflow: 'visible'
                         }}
                         onClick={e => e.stopPropagation()}
                       >

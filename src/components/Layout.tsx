@@ -82,11 +82,6 @@ export default function Layout() {
             alignItems: 'center',
             gap: 12
           }}>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <Link to="/terms" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Terms</Link>
-              <Link to="/privacy" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Privacy</Link>
-              <a href="mailto:support@timegen.app" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Support</a>
-            </div>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-placeholder)', margin: 0 }}>
               © 2026 Timetable AI. Built for smarter education.
             </p>
