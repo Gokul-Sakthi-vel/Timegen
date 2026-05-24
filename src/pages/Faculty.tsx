@@ -93,8 +93,12 @@ export default function Faculty() {
       }
     };
     const handleClickOutside = (e: MouseEvent) => {
-      if (activeMenuId && !(e.target as HTMLElement).closest('.faculty-menu-container')) {
+      const target = e.target as HTMLElement;
+      const clickedInsideCard = !!target.closest('.faculty-menu-container');
+      const clickedInsidePortal = !!target.closest('.faculty-menu-portal');
+      if (activeMenuId && !clickedInsideCard && !clickedInsidePortal) {
         setActiveMenuId(null);
+        setMenuPosition(null);
       }
     };
     window.addEventListener('keydown', handleEsc);
@@ -302,8 +306,13 @@ export default function Faculty() {
                       e.stopPropagation();
                       const btn = e.currentTarget as HTMLElement;
                       const rect = btn.getBoundingClientRect();
-                      setMenuPosition({ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX });
-                      setActiveMenuId(activeMenuId === f.id ? null : f.id);
+                      const newId = activeMenuId === f.id ? null : f.id;
+                      if (newId) {
+                        setMenuPosition({ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX });
+                      } else {
+                        setMenuPosition(null);
+                      }
+                      setActiveMenuId(newId);
                     }}
                     style={{
                       background: 'none', border: 'none', color: 'var(--text-secondary)',
@@ -321,7 +330,7 @@ export default function Faculty() {
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.95, y: 6 }}
                           transition={{ duration: 0.12, ease: 'easeOut' }}
-                          className="faculty-card-dropdown"
+                          className="faculty-card-dropdown faculty-menu-portal"
                           style={{
                             position: 'fixed', top: menuPosition.top, left: menuPosition.left - 170,
                             width: 170, background: 'var(--surface)',
