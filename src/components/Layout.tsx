@@ -32,7 +32,7 @@ export default function Layout() {
             height: 56,
             background: 'var(--surface)',
             borderBottom: '1.5px solid var(--border)',
-            padding: '0 16px',
+            padding: '0 12px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -66,15 +66,15 @@ export default function Layout() {
           </button>
         </header>
 
-        <main style={{ padding: '20px 24px 12px', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 56px)' }}>
+        <main style={{ padding: '12px 16px 12px', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 56px)' }}>
           <div style={{ maxWidth: 1200, margin: '0 auto', flex: 1, width: '100%' }}>
             <Outlet />
           </div>
           
           <footer style={{ 
             maxWidth: 1200, 
-            margin: '40px auto 0', 
-            padding: '24px 0', 
+            margin: '24px auto 0', 
+            padding: '16px 0', 
             borderTop: '1.5px solid var(--border)',
             width: '100%',
             display: 'flex',
@@ -82,7 +82,7 @@ export default function Layout() {
             alignItems: 'center',
             gap: 12
           }}>
-            <div style={{ display: 'flex', gap: 24 }}>
+            <div style={{ display: 'flex', gap: 12 }}>
               <Link to="/terms" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Terms</Link>
               <Link to="/privacy" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Privacy</Link>
               <a href="mailto:support@timegen.app" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Support</a>

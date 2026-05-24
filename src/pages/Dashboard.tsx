@@ -62,9 +62,9 @@ export default function Dashboard() {
   }, [classes.length, faculty.length, rooms.length, subjects.length, timetables.length]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 24, height: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 16, height: 'auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             {greeting()}
@@ -84,7 +84,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
         {stats.map((stat, i) => (
           <div
             key={stat.label}
@@ -93,7 +93,7 @@ export default function Dashboard() {
               background: 'var(--surface)',
               border: '1.5px solid var(--border)',
               borderRadius: 16,
-              padding: '18px 20px',
+              padding: '14px 16px',
               cursor: 'pointer',
               transition: 'box-shadow 0.2s, transform 0.2s',
               animation: `fadeUp 0.3s ease ${i * 0.07}s forwards`,
@@ -134,8 +134,8 @@ export default function Dashboard() {
               background: 'var(--warning-bg)',
               border: '1.5px solid var(--warning-border)',
               borderRadius: 16,
-              padding: '16px 20px',
-              marginBottom: 16
+              padding: '12px 16px',
+              marginBottom: 12
             }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                 <AlertCircle style={{ width: 18, height: 18, color: 'var(--warning-text)', flexShrink: 0, marginTop: 1 }} />
@@ -167,7 +167,7 @@ export default function Dashboard() {
           {/* Recent Timetables */}
           <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 16, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{
-              padding: '16px 20px',
+              padding: '12px 16px',
               borderBottom: '1.5px solid var(--border)',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             }}>
@@ -247,10 +247,10 @@ export default function Dashboard() {
         </div>
 
         {/* Sidebar Panel (Quick Actions & Insights) */}
-        <div className="dash-side" style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%', justifyContent: 'flex-start' }}>
+        <div className="dash-side" style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', justifyContent: 'flex-start' }}>
           {/* Quick Actions */}
-          <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 16, padding: '16px 20px' }}>
-            <h3 style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--text-primary)', margin: '0 0 14px' }}>Quick Actions</h3>
+          <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 16, padding: '12px 16px' }}>
+            <h3 style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--text-primary)', margin: '0 0 12px' }}>Quick Actions</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[
                 { label: 'Add Subject', icon: BookOpen, path: '/subjects' },
@@ -273,8 +273,8 @@ export default function Dashboard() {
           </div>
 
           {/* AI Insights */}
-          <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 16, padding: '16px 20px', flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 16, padding: '12px 16px', flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <div style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Sparkles style={{ width: 14, height: 14, color: 'var(--accent-text)' }} />
               </div>
@@ -301,7 +301,7 @@ export default function Dashboard() {
         .dash-body {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 24px;
+          gap: 12px;
           align-items: stretch;
         }
         @media (min-width: 1024px) {
