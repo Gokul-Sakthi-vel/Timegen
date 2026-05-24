@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal, Select } from '../components/UI';
 import { Users, Plus, Edit2, Trash2, Mail, Phone, MessageCircle, MoreVertical, Check, Square, CheckSquare, Search, BookOpen, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,7 +19,6 @@ export default function Faculty() {
     isSelectionMode, exitSelectionMode, selectSingle
   } = useSelection(faculty);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -93,12 +91,8 @@ export default function Faculty() {
       }
     };
     const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const clickedInsideCard = !!target.closest('.faculty-menu-container');
-      const clickedInsidePortal = !!target.closest('.faculty-menu-portal');
-      if (activeMenuId && !clickedInsideCard && !clickedInsidePortal) {
+      if (activeMenuId && !(e.target as HTMLElement).closest('.faculty-menu-container')) {
         setActiveMenuId(null);
-        setMenuPosition(null);
       }
     };
     window.addEventListener('keydown', handleEsc);
@@ -304,15 +298,7 @@ export default function Faculty() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      const btn = e.currentTarget as HTMLElement;
-                      const rect = btn.getBoundingClientRect();
-                      const newId = activeMenuId === f.id ? null : f.id;
-                      if (newId) {
-                        setMenuPosition({ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX });
-                      } else {
-                        setMenuPosition(null);
-                      }
-                      setActiveMenuId(newId);
+                      setActiveMenuId(activeMenuId === f.id ? null : f.id);
                     }}
                     style={{
                       background: 'none', border: 'none', color: 'var(--text-secondary)',
@@ -324,82 +310,82 @@ export default function Faculty() {
                   </button>
 
                   <AnimatePresence>
-                      {activeMenuId === f.id && menuPosition && createPortal(
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.95, y: 6 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95, y: 6 }}
-                          transition={{ duration: 0.12, ease: 'easeOut' }}
-                          className="faculty-card-dropdown faculty-menu-portal"
-                          style={{
-                            position: 'fixed', top: menuPosition.top, left: menuPosition.left - 170,
-                            width: 170, background: 'var(--surface)',
-                            border: '1.5px solid var(--border)', borderRadius: 14,
-                            boxShadow: '0 20px 50px rgba(0,0,0,0.18)',
-                            padding: 6, zIndex: 9999,
-                            marginTop: 6,
-                            overflow: 'visible'
+                    {activeMenuId === f.id && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                        transition={{ duration: 0.15, ease: 'easeOut' }}
+                        className="faculty-card-dropdown"
+                        style={{
+                          position: 'absolute', top: '100%', right: 0,
+                          width: 170, background: 'var(--surface)',
+                          border: '1.5px solid var(--border)', borderRadius: 14,
+                          boxShadow: '0 12px 35px rgba(0,0,0,0.15)',
+                          padding: 6, zIndex: 110,
+                          marginTop: 6,
+                          overflow: 'visible'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <button
+                          className="menu-item"
+                          onClick={() => {
+                            if (isSelectionMode) toggleItem(f.id);
+                            else selectSingle(f.id);
+                            setActiveMenuId(null);
                           }}
-                          onClick={e => e.stopPropagation()}
                         >
-                          <button
-                            className="menu-item"
-                            onClick={() => {
-                              if (isSelectionMode) toggleItem(f.id);
-                              else selectSingle(f.id);
-                              setActiveMenuId(null);
-                            }}
-                          >
-                            {isSelected(f.id) ? (
-                              <><CheckSquare className="menu-icon" /> Deselect</>
-                            ) : (
-                              <><Square className="menu-icon" /> Select</>
-                            )}
-                          </button>
-                          <div style={{ height: 1.5, background: 'var(--border)', margin: '4px 0', opacity: 0.5 }} />
-                          <button
-                            className="menu-item"
-                            onClick={() => {
-                              const link = `https://wa.me/${f.phone?.replace(/[^0-9]/g, '')}`;
-                              window.open(link, '_blank');
-                              setActiveMenuId(null);
-                            }}
-                          >
-                            <MessageCircle className="menu-icon" /> WhatsApp
-                          </button>
-                          <button
-                            className="menu-item"
-                            onClick={() => { handleEdit(f); setActiveMenuId(null); }}
-                          >
-                            <Edit2 className="menu-icon" /> Edit Profile
-                          </button>
-                          <button
-                            className="menu-item menu-item-danger"
-                            onClick={async () => {
-                              setDeleteConfirm({
-                                isOpen: true,
-                                title: 'Delete Faculty',
-                                message: `Are you sure you want to delete ${f.name}? This action cannot be undone.`,
-                                onConfirm: async () => {
-                                  try {
-                                    await deleteFaculty(f.id);
-                                    setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
-                                  } catch (err: any) {
-                                    handleError(err, () => {
-                                        deleteFaculty(f.id);
-                                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
-                                    });
-                                  }
+                          {isSelected(f.id) ? (
+                            <><CheckSquare className="menu-icon" /> Deselect</>
+                          ) : (
+                            <><Square className="menu-icon" /> Select</>
+                          )}
+                        </button>
+                        <div style={{ height: 1.5, background: 'var(--border)', margin: '4px 0', opacity: 0.5 }} />
+                        <button
+                          className="menu-item"
+                          onClick={() => {
+                            const link = `https://wa.me/${f.phone?.replace(/[^0-9]/g, '')}`;
+                            window.open(link, '_blank');
+                            setActiveMenuId(null);
+                          }}
+                        >
+                          <MessageCircle className="menu-icon" /> WhatsApp
+                        </button>
+                        <button
+                          className="menu-item"
+                          onClick={() => { handleEdit(f); setActiveMenuId(null); }}
+                        >
+                          <Edit2 className="menu-icon" /> Edit Profile
+                        </button>
+                        <button
+                          className="menu-item menu-item-danger"
+                          onClick={async () => {
+                            setDeleteConfirm({
+                              isOpen: true,
+                              title: 'Delete Faculty',
+                              message: `Are you sure you want to delete ${f.name}? This action cannot be undone.`,
+                              onConfirm: async () => {
+                                try {
+                                  await deleteFaculty(f.id);
+                                  setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                } catch (err: any) {
+                                  handleError(err, () => {
+                                      deleteFaculty(f.id);
+                                      setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                  });
                                 }
-                              });
-                            }}
-                          >
-                            <Trash2 className="menu-icon" /> Remove
-                          </button>
-                        </motion.div>,
-                        document.body
-                      )}
-                    </AnimatePresence>
+                              }
+                            });
+                            setActiveMenuId(null);
+                          }}
+                        >
+                          <Trash2 className="menu-icon" /> Remove
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
 
