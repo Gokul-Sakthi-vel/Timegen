@@ -471,7 +471,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabaseClient.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: `${window.location.origin}`,
         queryParams: { prompt: 'select_account' },
       },
     });
