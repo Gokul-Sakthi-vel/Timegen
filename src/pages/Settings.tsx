@@ -36,6 +36,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toMinutes } from '../utils/schedule';
 import { CollegeSettings, Break, AppearanceSettings, AcademicPreferences, TimetableRules, NotificationSettings, AppState } from '../types';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -215,6 +216,50 @@ export default function Settings() {
 
   const patchNotifications = (changes: Partial<NotificationSettings>) => {
     patch({ notifications: { ...settings.notifications, ...changes } });
+  };
+
+  const patchBreaks = (breaks: Break[]) => {
+    patch({ breaks });
+  };
+
+  const handleAddBreak = () => {
+    const nextId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `b-${Date.now()}`;
+    patchBreaks([
+      ...settings.breaks,
+      {
+        id: nextId,
+        name: `Interval ${settings.breaks.length + 1}`,
+        startTime: settings.startTime,
+        endTime: settings.endTime,
+      }
+    ]);
+  };
+
+  const handleUpdateBreak = (id: string, changes: Partial<Break>) => {
+    patchBreaks(settings.breaks.map(b => b.id === id ? { ...b, ...changes } : b));
+  };
+
+  const handleRemoveBreak = (id: string) => {
+    patchBreaks(settings.breaks.filter(b => b.id !== id));
+  };
+
+  const isBreakInvalid = (breakItem: Break) => {
+    const start = toMinutes(breakItem.startTime);
+    const end = toMinutes(breakItem.endTime);
+    const startMin = toMinutes(settings.startTime);
+    const endMin = toMinutes(settings.endTime);
+
+    if (start >= end || start < startMin || end > endMin) {
+      return true;
+    }
+
+    return settings.breaks.some(other =>
+      other.id !== breakItem.id &&
+      start < toMinutes(other.endTime) &&
+      toMinutes(other.startTime) < end
+    );
   };
 
   const patchAppearance = (changes: Partial<AppearanceSettings>) => {
@@ -554,6 +599,96 @@ export default function Settings() {
                   <Plus size={16} />
                 </button>
               </div>
+            </div>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title="Breaks & Intervals"
+          description="Add break windows that the timetable must skip while scheduling periods."
+          icon={CalendarDays}
+          isOpen={openSection === 'breaks'}
+          onToggle={() => toggleSection('breaks')}
+        >
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {settings.breaks.length === 0 && (
+              <div style={{ padding: 16, borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                No intervals configured yet. Add a break to preserve time for recess, lunch or staff transitions.
+              </div>
+            )}
+
+            {settings.breaks.map((breakItem, index) => {
+              const invalid = isBreakInvalid(breakItem);
+              return (
+                <div key={breakItem.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 12, alignItems: 'center' }}>
+                  <div>
+                    <label className="field-label">Name</label>
+                    <input
+                      type="text"
+                      value={breakItem.name}
+                      onChange={e => handleUpdateBreak(breakItem.id, { name: e.target.value })}
+                      className="field-input"
+                      style={{ width: '100%' }}
+                      placeholder={`Interval ${index + 1}`}
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Start</label>
+                    <input
+                      type="time"
+                      value={breakItem.startTime}
+                      onChange={e => handleUpdateBreak(breakItem.id, { startTime: e.target.value })}
+                      className="field-input"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">End</label>
+                    <input
+                      type="time"
+                      value={breakItem.endTime}
+                      onChange={e => handleUpdateBreak(breakItem.id, { endTime: e.target.value })}
+                      className="field-input"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveBreak(breakItem.id)}
+                    className="btn btn-outline"
+                    style={{ height: 40, borderRadius: 14, minWidth: 40, padding: '0 12px' }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  {invalid && (
+                    <div style={{ gridColumn: '1 / -1', color: 'var(--danger-text)', fontSize: '0.75rem', marginTop: 4 }}>
+                      {toMinutes(breakItem.startTime) >= toMinutes(breakItem.endTime)
+                        ? 'Start time must be before end time.'
+                        : (settings.breaks.some(other =>
+                            other.id !== breakItem.id &&
+                            toMinutes(breakItem.startTime) < toMinutes(other.endTime) &&
+                            toMinutes(other.startTime) < toMinutes(breakItem.endTime)
+                          )
+                          ? 'This interval overlaps another break.'
+                          : 'Interval must be inside the overall working day.')}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <button
+                type="button"
+                onClick={handleAddBreak}
+                className="btn btn-primary"
+                style={{ borderRadius: 14, padding: '12px 18px' }}
+              >
+                <Plus size={16} /> Add Interval
+              </button>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.825rem' }}>
+                Timetable will always generate periods between {settings.startTime} and {settings.endTime}, skipping defined intervals.
+              </span>
             </div>
           </div>
         </SettingsSection>

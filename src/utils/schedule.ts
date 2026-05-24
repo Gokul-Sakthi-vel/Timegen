@@ -56,6 +56,8 @@ export const buildTeachingSlots = (settings: CollegeSettings): string[] => {
   const breaks = settings.breaks
     .map(b => ({ start: toMinutes(b.startTime), end: toMinutes(b.endTime) }))
     .filter(b => b.end > b.start)
+    .filter(b => b.end > startMin && b.start < endMin)
+    .map(b => ({ start: Math.max(b.start, startMin), end: Math.min(b.end, endMin) }))
     .sort((a, b) => a.start - b.start);
 
   const slots: string[] = [];
@@ -98,8 +100,15 @@ export const buildTimeline = (settings: CollegeSettings): TimelineEntry[] => {
     order: periodOrder - 1,
   }));
 
+  const startMin = toMinutes(settings.startTime);
+  const endMin = toMinutes(settings.endTime);
+
   const breakEntries: TimelineEntry[] = settings.breaks
-    .filter(b => toMinutes(b.endTime) > toMinutes(b.startTime))
+    .filter(b => {
+      const start = toMinutes(b.startTime);
+      const end = toMinutes(b.endTime);
+      return end > start && end > startMin && start < endMin;
+    })
     .map(b => ({
       type: 'break' as const,
       id: b.id,
