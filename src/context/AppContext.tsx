@@ -72,7 +72,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const STORAGE_KEY = 'timetable_ai_data_v6';
 const STORAGE_KEY_LEGACY = 'timetable_ai_data_v5';
 const STORAGE_KEY_LEGACY2 = 'timetable_ai_data_v4';
-const API_BASE_URL = '';
+const API_BASE_URL = 'https://timegen-8zc7.onrender.com';
 
 type ApiSubject = {
   id: string;
