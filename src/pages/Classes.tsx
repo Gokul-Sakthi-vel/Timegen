@@ -179,7 +179,7 @@ export default function Classes() {
             <Search style={{ width: 18, height: 18, color: 'var(--text-secondary)' }} />
             <input 
               type="text" 
-              placeholder="Search by class name…" 
+              placeholder="Search..." 
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -368,7 +368,7 @@ export default function Classes() {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label className="field-label">Class Name</label>
-            <input name="name" defaultValue={editingClass?.name} required placeholder="e.g. Computer Science - Year 1" className="field-input" style={{ width: '100%' }} />
+            <input name="name" defaultValue={editingClass?.name} required placeholder="Enter class name" className="field-input" style={{ width: '100%' }} />
           </div>
           <div>
             <label className="field-label">Number of Students</label>

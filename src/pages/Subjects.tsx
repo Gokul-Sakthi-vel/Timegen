@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal } from '../components/UI';
-import { BookOpen, Plus, Edit2, Trash2, Search, Minus, Lock, MoreVertical, Check, Square, CheckSquare, Clock } from 'lucide-react';
+import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal, Select } from '../components/UI';
+import { 
+  BookOpen, Plus, Edit2, Trash2, Search, Minus, Lock, MoreVertical, 
+  Check, Square, CheckSquare, Clock, FileText, FlaskConical, Boxes, 
+  MessageSquare, ArrowDownRight, ArrowRight, ArrowUpRight, Layers
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -24,6 +28,7 @@ function StepperInput({
         value={value}
         onChange={e => onChange(Math.max(min, Number(e.target.value) || min))}
         className="field-input"
+        placeholder="Enter value"
         style={{ textAlign: 'center', flex: 1 }}
       />
       <button type="button" className="stepper-btn" onClick={() => onChange(Math.min(max, value + 1))}>
@@ -127,6 +132,8 @@ export default function Subjects() {
   const [weeklyPeriodsValue, setWeeklyPeriodsValue] = useState(4);
   const [isFixedValue, setIsFixedValue] = useState(false);
   const [subjectTypeFilter, setSubjectTypeFilter] = useState<string>('all');
+  const [modalSubjectType, setModalSubjectType] = useState<SubjectType>('Theory');
+  const [modalPriority, setModalPriority] = useState<Priority>('Medium');
   
   const filteredSubjects = subjects.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -138,6 +145,7 @@ export default function Subjects() {
   const handleAdd = () => {
     setEditingSubject(null);
     setHoursValue(4); setCreditsValue(3); setWeeklyPeriodsValue(4); setIsFixedValue(false);
+    setModalSubjectType('Theory'); setModalPriority('Medium');
     setIsModalOpen(true);
   };
 
@@ -147,6 +155,8 @@ export default function Subjects() {
     setCreditsValue(subject.credits ?? 0);
     setWeeklyPeriodsValue(subject.weeklyPeriods ?? subject.hours);
     setIsFixedValue(subject.isFixed ?? isAutoFixed(subject.name));
+    setModalSubjectType(subject.subjectType);
+    setModalPriority(subject.priority);
     setIsModalOpen(true);
   };
 
@@ -237,22 +247,25 @@ export default function Subjects() {
             <Search style={{ width: 18, height: 18, color: 'var(--text-secondary)' }} />
             <input 
               type="text" 
-              placeholder="Search subjects by name or code…" 
+              placeholder="Search..." 
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
-          <select 
-            className="filter-select"
-            value={subjectTypeFilter}
-            onChange={e => setSubjectTypeFilter(e.target.value)}
-          >
-            <option value="all">All Types</option>
-            <option value="Theory">Theory</option>
-            <option value="Laboratory">Laboratory</option>
-            <option value="Theory with Laboratory">Theory + Lab</option>
-            <option value="Tutorial">Tutorial</option>
-          </select>
+          <div style={{ width: 220 }}>
+            <Select
+              placeholder="Filter by type"
+              value={subjectTypeFilter}
+              onChange={setSubjectTypeFilter}
+              options={[
+                { value: 'all', label: 'All Types' },
+                { value: 'Theory', label: 'Theory' },
+                { value: 'Laboratory', label: 'Laboratory' },
+                { value: 'Theory with Laboratory', label: 'Theory + Lab' },
+                { value: 'Tutorial', label: 'Tutorial' },
+              ]}
+            />
+          </div>
         </div>
       )}
 
@@ -529,11 +542,11 @@ export default function Subjects() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div style={{ gridColumn: '1 / -1' }}>
               <label className="field-label">Subject Name</label>
-              <input name="name" defaultValue={editingSubject?.name} required placeholder="e.g. Advanced Mathematics" className="field-input" style={{ width: '100%' }} />
+              <input name="name" defaultValue={editingSubject?.name} required placeholder="Enter subject name" className="field-input" style={{ width: '100%' }} />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label className="field-label">Subject Code</label>
-              <input name="code" defaultValue={editingSubject?.code} placeholder="Optional" className="field-input" style={{ width: '100%' }} />
+              <input name="code" defaultValue={editingSubject?.code} placeholder="Enter subject code" className="field-input" style={{ width: '100%' }} />
             </div>
             <div>
               <label className="field-label">Weekly Hours</label>
@@ -572,21 +585,33 @@ export default function Subjects() {
               </button>
             </div>
             <div>
-              <label className="field-label">Subject Type</label>
-              <select name="subjectType" defaultValue={editingSubject?.subjectType || 'Theory'} className="field-input" style={{ width: '100%', appearance: 'none', cursor: 'pointer' }}>
-                <option value="Theory">Theory</option>
-                <option value="Laboratory">Laboratory</option>
-                <option value="Theory with Laboratory">Theory with Laboratory</option>
-                <option value="Tutorial">Tutorial</option>
-              </select>
+              <Select
+                label="Subject Type"
+                name="subjectType"
+                placeholder="Select subject type"
+                value={modalSubjectType}
+                onChange={(v) => setModalSubjectType(v as SubjectType)}
+                options={[
+                  { value: 'Theory', label: 'Theory' },
+                  { value: 'Laboratory', label: 'Laboratory' },
+                  { value: 'Theory with Laboratory', label: 'Theory with Laboratory' },
+                  { value: 'Tutorial', label: 'Tutorial' },
+                ]}
+              />
             </div>
             <div>
-              <label className="field-label">Priority</label>
-              <select name="priority" defaultValue={editingSubject?.priority || 'Medium'} className="field-input" style={{ width: '100%', appearance: 'none', cursor: 'pointer' }}>
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
-              </select>
+              <Select
+                label="Priority"
+                name="priority"
+                placeholder="Select priority"
+                value={modalPriority}
+                onChange={(v) => setModalPriority(v as Priority)}
+                options={[
+                  { value: 'High', label: 'High' },
+                  { value: 'Medium', label: 'Medium' },
+                  { value: 'Low', label: 'Low' },
+                ]}
+              />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>

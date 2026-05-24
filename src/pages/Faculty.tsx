@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal } from '../components/UI';
-import { Users, Plus, Edit2, Trash2, Mail, Phone, MessageCircle, MoreVertical, Check, Square, CheckSquare, Search } from 'lucide-react';
+import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal, Select } from '../components/UI';
+import { Users, Plus, Edit2, Trash2, Mail, Phone, MessageCircle, MoreVertical, Check, Square, CheckSquare, Search, BookOpen, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -188,21 +188,21 @@ export default function Faculty() {
             <Search style={{ width: 18, height: 18, color: 'var(--text-secondary)' }} />
             <input 
               type="text" 
-              placeholder="Search by name or email…" 
+              placeholder="Search..." 
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
-          <select 
-            className="filter-select"
-            value={subjectFilter}
-            onChange={e => setSubjectFilter(e.target.value)}
-          >
-            <option value="all">All Subjects</option>
-            {subjects.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+          <div style={{ width: 220 }}>
+            <Select
+              value={subjectFilter}
+              onChange={setSubjectFilter}
+              options={[
+                { value: 'all', label: 'All Specialties' },
+                ...subjects.map(s => ({ value: s.id, label: s.name }))
+              ]}
+            />
+          </div>
         </div>
       )}
 
@@ -420,15 +420,15 @@ export default function Faculty() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div style={{ gridColumn: '1 / -1' }}>
               <label className="field-label">Full Name</label>
-              <input name="name" defaultValue={editingFaculty?.name} required placeholder="Dr. Jane Smith" className="field-input" style={{ width: '100%' }} />
+              <input name="name" defaultValue={editingFaculty?.name} required placeholder="Enter faculty name" className="field-input" style={{ width: '100%' }} />
             </div>
             <div>
               <label className="field-label">Email Address</label>
-              <input name="email" type="email" defaultValue={editingFaculty?.email} required placeholder="jane.smith@university.edu" className="field-input" style={{ width: '100%' }} />
+              <input name="email" type="email" defaultValue={editingFaculty?.email} required placeholder="you@institution.edu" className="field-input" style={{ width: '100%' }} />
             </div>
             <div>
               <label className="field-label">Phone Number</label>
-              <input name="phone" defaultValue={editingFaculty?.phone} placeholder="+1 234 567 890" className="field-input" style={{ width: '100%' }} />
+              <input name="phone" defaultValue={editingFaculty?.phone} placeholder="Enter phone number" className="field-input" style={{ width: '100%' }} />
             </div>
           </div>
           <div>

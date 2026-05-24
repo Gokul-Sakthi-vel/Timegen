@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal } from '../components/UI';
-import { DoorOpen, Plus, Edit2, Trash2, Check, MoreVertical, Square, CheckSquare, Search } from 'lucide-react';
+import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal, Select } from '../components/UI';
+import { DoorOpen, Plus, Edit2, Trash2, Check, MoreVertical, Square, CheckSquare, Search, Monitor, School, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -19,6 +19,7 @@ export default function Rooms() {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [modalRoomType, setModalRoomType] = useState<'Classroom' | 'Lab'>('Classroom');
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     onConfirm: () => void;
@@ -97,8 +98,16 @@ export default function Rooms() {
     };
   }, [activeMenuId, exitSelectionMode]);
 
-  const handleAdd = () => { setEditingRoom(null); setIsModalOpen(true); };
-  const handleEdit = (r: Room) => { setEditingRoom(r); setIsModalOpen(true); };
+  const handleAdd = () => { 
+    setEditingRoom(null); 
+    setModalRoomType('Classroom');
+    setIsModalOpen(true); 
+  };
+  const handleEdit = (r: Room) => { 
+    setEditingRoom(r); 
+    setModalRoomType(r.type);
+    setIsModalOpen(true); 
+  };
 
 
   const handleBulkDelete = async () => {
@@ -183,20 +192,22 @@ export default function Rooms() {
             <Search style={{ width: 18, height: 18, color: 'var(--text-secondary)' }} />
             <input 
               type="text" 
-              placeholder="Search by room name…" 
+              placeholder="Search..." 
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
-          <select 
-            className="filter-select"
-            value={typeFilter}
-            onChange={e => setTypeFilter(e.target.value)}
-          >
-            <option value="all">All Types</option>
-            <option value="Classroom">Classroom</option>
-            <option value="Lab">Laboratory</option>
-          </select>
+          <div style={{ width: 220 }}>
+            <Select
+              value={typeFilter}
+              onChange={setTypeFilter}
+              options={[
+                { value: 'all', label: 'All Rooms' },
+                { value: 'Classroom', label: 'Classrooms' },
+                { value: 'Lab', label: 'Laboratories' },
+              ]}
+            />
+          </div>
         </div>
       )}
 
@@ -377,18 +388,24 @@ export default function Rooms() {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label className="field-label">Room Name / Number</label>
-            <input name="name" defaultValue={editingRoom?.name} required placeholder="e.g. Room 302 or Physics Lab" className="field-input" style={{ width: '100%' }} />
+            <input name="name" defaultValue={editingRoom?.name} required placeholder="Enter room name" className="field-input" style={{ width: '100%' }} />
           </div>
           <div>
             <label className="field-label">Capacity</label>
             <input name="capacity" type="number" defaultValue={editingRoom?.capacity || 40} required className="field-input" style={{ width: '100%' }} />
           </div>
           <div>
-            <label className="field-label">Room Type</label>
-            <select name="type" defaultValue={editingRoom?.type || 'Classroom'} className="field-input" style={{ width: '100%', appearance: 'none', cursor: 'pointer' }}>
-              <option value="Classroom">Classroom</option>
-              <option value="Lab">Laboratory</option>
-            </select>
+            <Select
+              label="Room Type"
+              name="type"
+              placeholder="Select room type"
+              value={modalRoomType}
+              onChange={(v) => setModalRoomType(v as 'Classroom' | 'Lab')}
+              options={[
+                { value: 'Classroom', label: 'Classroom' },
+                { value: 'Lab', label: 'Laboratory' },
+              ]}
+            />
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
             <button type="button" className="btn btn-outline" style={{ flex: 1, borderRadius: 10 }} onClick={() => setIsModalOpen(false)}>Cancel</button>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Link, Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { Menu, Calendar } from 'lucide-react';
 import GlobalNotification from './GlobalNotification';
@@ -66,10 +66,31 @@ export default function Layout() {
           </button>
         </header>
 
-        <main style={{ padding: '20px 24px 12px' }}>
-          <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+        <main style={{ padding: '20px 24px 12px', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 56px)' }}>
+          <div style={{ maxWidth: 1200, margin: '0 auto', flex: 1, width: '100%' }}>
             <Outlet />
           </div>
+          
+          <footer style={{ 
+            maxWidth: 1200, 
+            margin: '40px auto 0', 
+            padding: '24px 0', 
+            borderTop: '1.5px solid var(--border)',
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', gap: 24 }}>
+              <Link to="/terms" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Terms</Link>
+              <Link to="/privacy" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Privacy</Link>
+              <a href="mailto:support@timegen.app" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 600 }} className="footer-link">Support</a>
+            </div>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-placeholder)', margin: 0 }}>
+              © 2026 Timetable AI. Built for smarter education.
+            </p>
+          </footer>
         </main>
       </div>
 
@@ -81,6 +102,11 @@ export default function Layout() {
         }
         @media (max-width: 1023px) {
           .main-area { padding-left: 0 !important; }
+          .mobile-header { height: 56px !important; }
+          main { min-height: calc(100vh - 56px) !important; }
+        }
+        .footer-link:hover {
+          color: var(--accent) !important;
         }
       `}</style>
     </div>

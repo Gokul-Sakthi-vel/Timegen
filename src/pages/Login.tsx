@@ -148,7 +148,7 @@ export default function Login() {
                 <input
                   type="email" required value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="name@company.com"
+                  placeholder="you@institution.edu"
                   className="field-input" style={{ paddingLeft: 40, borderRadius: 10, padding: '10px 14px 10px 40px', fontSize: '0.9rem' }}
                 />
               </div>
@@ -165,7 +165,7 @@ export default function Login() {
                   type={showPassword ? "text" : "password"} 
                   required value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   className="field-input" style={{ paddingLeft: 40, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 40px', fontSize: '0.9rem' }}
                 />
                 <button
@@ -248,7 +248,7 @@ export default function Login() {
         </div>
 
         <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-placeholder)', marginTop: 16, lineHeight: 1.4 }}>
-          Secure login with industry-standard encryption.<br/>
+          By continuing, you agree to our <Link to="/terms" style={{ color: 'var(--text-secondary)', fontWeight: 600, textDecoration: 'none' }}>Terms</Link> and <Link to="/privacy" style={{ color: 'var(--text-secondary)', fontWeight: 600, textDecoration: 'none' }}>Privacy Policy</Link>.<br/>
           © 2026 Timetable AI.
         </p>
       </motion.div>

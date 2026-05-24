@@ -1,5 +1,5 @@
 import React from 'react';
-import { LucideIcon, Plus, X, Trash2, CheckCircle2, WifiOff, RotateCcw, AlertTriangle, ShieldX } from 'lucide-react';
+import { LucideIcon, Plus, X, Trash2, CheckCircle2, WifiOff, RotateCcw, AlertTriangle, ShieldX, ChevronDown, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -13,7 +13,7 @@ interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export function Card({ children, className = '', title, subtitle, headerAction, style, ...props }: CardProps) {
   return (
-    <div className={`card ${className}`} style={{ overflow: 'hidden', ...style }} {...props}>
+    <div className={`card ${className}`} style={{ overflow: 'visible', ...style }} {...props}>
       {(title || headerAction) && (
         <div style={{
           padding: '16px 20px',
@@ -219,7 +219,7 @@ export function ErrorModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         className="modal-box"
-        style={{ maxWidth: 400, padding: 0, overflow: 'hidden' }}
+        style={{ maxWidth: 400, padding: 0, overflow: 'visible' }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{ padding: '32px 24px', textAlign: 'center' }}>
@@ -428,6 +428,164 @@ export function BulkActionBar({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+
+interface SelectOption {
+  value: string;
+  label: string;
+  badge?: string;
+}
+
+interface SelectProps {
+  options: SelectOption[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  name?: string;
+  label?: string;
+  error?: string;
+  className?: string;
+}
+
+export function Select({ options, value, onChange, placeholder = 'Select option', name, label, error, className = '' }: SelectProps) {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [openUp, setOpenUp] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const selectedOption = options.find(o => o.value === value);
+
+  const handleOpen = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setOpenUp(window.innerHeight - rect.bottom < 260 && rect.top > 260);
+    }
+    setIsOpen(prev => !prev);
+  };
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isOpen]);
+
+  // Close on Escape
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`select-container ${className}`}
+      style={{ position: 'relative', width: '100%', zIndex: isOpen ? 9999 : 'auto' }}
+    >
+      {label && <label className="field-label">{label}</label>}
+
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={handleOpen}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          textAlign: 'left',
+          borderRadius: 12,
+          padding: '10px 14px',
+          background: 'var(--surface)',
+          border: isOpen ? '1.5px solid var(--accent)' : '1.5px solid var(--border)',
+          boxShadow: isOpen ? '0 0 0 4px var(--accent-muted)' : 'none',
+          transition: 'border-color 0.15s, box-shadow 0.15s',
+          outline: 'none',
+          fontFamily: 'var(--font-sans)',
+        }}
+      >
+        <span style={{
+          color: selectedOption ? 'var(--text-primary)' : 'var(--text-placeholder)',
+          fontWeight: selectedOption ? 600 : 400,
+          fontSize: '0.875rem',
+        }}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown style={{
+          width: 18, height: 18,
+          color: 'var(--text-placeholder)',
+          transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s ease',
+          flexShrink: 0,
+        }} />
+      </button>
+
+      <input type="hidden" name={name} value={value} />
+
+      {isOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            ...(openUp ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }),
+            left: 0,
+            right: 0,
+            background: 'var(--surface)',
+            border: '1.5px solid var(--border)',
+            borderRadius: 12,
+            boxShadow: '0 8px 30px rgba(0,0,0,0.15)',
+            zIndex: 99999,
+            overflow: 'hidden',
+            padding: 4,
+          }}
+        >
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '11px 14px',
+                minHeight: 44,
+                borderRadius: 8,
+                border: 'none',
+                background: value === option.value ? 'var(--accent-muted)' : 'transparent',
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                textAlign: 'left',
+                outline: 'none',
+                fontFamily: 'var(--font-sans)',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={e => { if (value !== option.value) (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-2)'; }}
+              onMouseLeave={e => { if (value !== option.value) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+            >
+              <span style={{ fontSize: '0.9rem', fontWeight: value === option.value ? 700 : 500 }}>
+                {option.label}
+              </span>
+              {value === option.value && <Check size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

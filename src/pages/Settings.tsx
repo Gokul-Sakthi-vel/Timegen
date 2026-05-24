@@ -316,7 +316,7 @@ export default function Settings() {
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
           <button 
-            onClick={() => { restoreSettingsDefaults(); showSuccess('Settings restored to defaults'); }}
+            onClick={() => { restoreSettingsDefaults(); showNotification({ title: 'Success', message: 'Settings restored to defaults', type: 'success' }); }}
             className="btn btn-outline btn-sm"
           >
             <RefreshCw size={14} style={{ marginRight: 6 }} /> Restore Defaults
@@ -506,6 +506,7 @@ export default function Settings() {
                 <input
                   type="time" value={settings.startTime}
                   onChange={e => patch({ startTime: e.target.value })}
+                  placeholder="Select start time"
                   className="field-input" style={{ width: '100%' }}
                 />
               </div>
@@ -514,6 +515,7 @@ export default function Settings() {
                 <input
                   type="time" value={settings.endTime}
                   onChange={e => patch({ endTime: e.target.value })}
+                  placeholder="Select end time"
                   className="field-input" style={{ width: '100%' }}
                 />
               </div>
@@ -541,6 +543,7 @@ export default function Settings() {
                 <input
                   type="number" min={30} step={5} value={settings.periodDuration}
                   onChange={e => patch({ periodDuration: Math.max(30, parseInt(e.target.value || '30', 10)) })}
+                  placeholder="Enter duration (minutes)"
                   className="field-input" style={{ flex: 1, textAlign: 'center', fontSize: '1rem', fontWeight: 700 }}
                 />
                 <button

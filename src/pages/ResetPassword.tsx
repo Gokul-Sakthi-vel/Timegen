@@ -198,7 +198,7 @@ export default function ResetPassword() {
                         type={showPassword ? "text" : "password"} 
                         required value={currentPassword}
                         onChange={e => setCurrentPassword(e.target.value)}
-                        placeholder="Required for security"
+                        placeholder="Enter current password"
                         className="field-input" style={{ paddingLeft: 40, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 40px', fontSize: '0.9rem' }}
                       />
                     </div>
@@ -212,7 +212,7 @@ export default function ResetPassword() {
                         type={showPassword ? "text" : "password"} 
                         required value={password}
                         onChange={e => setPassword(e.target.value)}
-                        placeholder="Min. 6 characters"
+                        placeholder="Create a password"
                         className="field-input" style={{ paddingLeft: 40, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 40px', fontSize: '0.9rem' }}
                       />
                       <button
@@ -237,7 +237,7 @@ export default function ResetPassword() {
                         type={showPassword ? "text" : "password"} 
                         required value={confirmPassword}
                         onChange={e => setConfirmPassword(e.target.value)}
-                        placeholder="Verify your new password"
+                        placeholder="Confirm your password"
                         className="field-input" style={{ paddingLeft: 40, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 40px', fontSize: '0.9rem' }}
                       />
                     </div>
