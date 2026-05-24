@@ -367,11 +367,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const sessionTimeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 2000));
-    const sessionFetch = supabaseClient.auth.getSession().then(({ data }) => data.session);
+    let isMounted = true;
 
-    Promise.race([sessionFetch, sessionTimeout])
-      .then(session => {
+    const loadSession = async () => {
+      try {
+        const { data } = await supabaseClient.auth.getSession();
+        const session = data.session;
+        if (!isMounted) return;
         if (session?.user) {
           const u = session.user;
           setState(prev => ({
@@ -384,14 +386,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             },
           }));
         }
-        setAuthLoading(false);
-      })
-      .catch(() => {
-        setAuthLoading(false);
-      });
+      } catch (error) {
+        console.error('Failed to load auth session', error);
+      } finally {
+        if (isMounted) {
+          setAuthLoading(false);
+        }
+      }
+    };
+
+    loadSession();
 
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
       (_event, session) => {
+        if (!isMounted) return;
         if (session?.user) {
           const u = session.user;
           setState(prev => ({
@@ -409,7 +417,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setAuthLoading(false);
       }
     );
-    return () => subscription.unsubscribe();
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {

@@ -49,8 +49,12 @@ export default function Faculty() {
   const navigate = useNavigate();
 
   const handleError = (err: any, retryFn?: () => void) => {
+    console.error('Faculty error:', err);
     const isOffline = !navigator.onLine || err.message?.toLowerCase().includes('failed to fetch');
     const isUnauthorized = err.message?.includes('401') || err.message?.toLowerCase().includes('unauthorized');
+    const message = err.message && err.message !== 'Failed to fetch'
+      ? err.message
+      : "We encountered an unexpected error. Please try again later.";
 
     if (isOffline) {
       setErrorModal({
@@ -72,7 +76,7 @@ export default function Faculty() {
       setErrorModal({
         isOpen: true,
         title: "Something went wrong",
-        message: "We encountered an unexpected error. Please try again later.",
+        message,
         type: 'error',
         onRetry: retryFn
       });
@@ -135,8 +139,10 @@ export default function Faculty() {
       else { await addFaculty(data as any); }
       setIsModalOpen(false);
     } catch (err: any) {
+      console.error('Faculty save failed', err);
       handleError(err, () => {
-          console.log("Retrying save...");
+        if (editingFaculty) updateFaculty(editingFaculty.id, data).catch(console.error);
+        else addFaculty(data as any).catch(console.error);
       });
     }
   };

@@ -1,9 +1,17 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, FileText } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
 
 export default function Terms() {
+  const navigate = useNavigate();
+  const { isAuthenticated, authLoading } = useApp();
+
+  const handleBackToApp = () => {
+    navigate(authLoading || isAuthenticated ? '/' : '/login');
+  };
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -12,19 +20,21 @@ export default function Terms() {
       padding: '40px 20px',
     }}>
       <div style={{ maxWidth: 800, margin: '0 auto' }}>
-        <Link to="/login" style={{ 
+        <button onClick={handleBackToApp} style={{ 
           display: 'inline-flex', 
           alignItems: 'center', 
           gap: 8, 
           color: 'var(--text-secondary)', 
-          textDecoration: 'none',
+          background: 'none',
+          border: 'none',
           fontSize: '0.875rem',
           fontWeight: 600,
           marginBottom: 32,
+          cursor: 'pointer',
           transition: 'color 0.2s'
         }} className="hover-link">
           <ArrowLeft size={16} /> Back to App
-        </Link>
+        </button>
 
         <header style={{ marginBottom: 48 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>

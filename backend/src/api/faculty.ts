@@ -35,11 +35,56 @@ const filterPayload = async (table: string, payload: Record<string, any>) => {
     return Object.fromEntries(
       Object.entries(payload).filter(([_, val]) => val !== undefined)
     );
-  } catch {
+  } catch (error) {
+    console.error('Payload filter failed:', error);
     return Object.fromEntries(
       Object.entries(payload).filter(([_, val]) => val !== undefined)
     );
   }
+};
+
+const normalizeFacultyPayload = (body: any) => {
+  const subjects = Array.isArray(body.subjects)
+    ? body.subjects
+    : Array.isArray(body.subject_ids)
+    ? body.subject_ids
+    : [];
+
+  const availability = Array.isArray(body.availability)
+    ? body.availability
+    : [];
+
+  return {
+    name: typeof body.name === 'string' ? body.name.trim() : typeof body.faculty_name === 'string' ? body.faculty_name.trim() : undefined,
+    email: typeof body.email === 'string' ? body.email.trim() : undefined,
+    phone: typeof body.phone === 'string' ? body.phone.trim() : undefined,
+    availability,
+    subjects,
+    department: typeof body.department === 'string' ? body.department.trim() : undefined,
+    faculty_code: typeof body.faculty_code === 'string' ? body.faculty_code.trim() : undefined,
+  };
+};
+
+const validateFacultyPayload = (payload: ReturnType<typeof normalizeFacultyPayload>) => {
+  const errors: string[] = [];
+
+  if (!payload.name) {
+    errors.push('Missing faculty name.');
+  }
+  if (!payload.email) {
+    errors.push('Missing email address.');
+  }
+  if (payload.email && typeof payload.email === 'string' && !payload.email.includes('@')) {
+    errors.push('Email must be valid.');
+  }
+  if (!Array.isArray(payload.subjects)) {
+    errors.push('Subjects must be an array.');
+  }
+  if (!Array.isArray(payload.availability)) {
+    errors.push('Availability must be an array.');
+  }
+
+  return errors;
 };
 
 export const getFaculty = async (req: AuthRequest, res: express.Response) => {
@@ -76,20 +121,28 @@ export const getFacultyById = async (req: AuthRequest, res: express.Response) =>
 };
 
 export const createFaculty = async (req: AuthRequest, res: express.Response) => {
-  try {
-    const { name, email, phone, availability, subjects } = req.body as {
-      name?: string;
-      email?: string;
-      phone?: string;
-      availability?: string[];
-      subjects?: string[];
-    };
+  console.error('Faculty Save Request body:', JSON.stringify(req.body));
 
-    if (!name || !email) {
-      return res.status(400).json({ error: 'name and email are required.' });
+  try {
+    const body = normalizeFacultyPayload(req.body);
+    const validationErrors = validateFacultyPayload(body);
+
+    if (validationErrors.length > 0) {
+      console.error('Faculty Save Validation Failed:', validationErrors);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid faculty payload.',
+        issues: validationErrors,
+      });
     }
 
-    const rawPayload = { name, email, phone, availability: availability || [], user_id: req.userId };
+    const rawPayload = {
+      name: body.name,
+      email: body.email,
+      phone: body.phone,
+      availability: body.availability,
+      user_id: req.userId,
+    };
     const payload = await filterPayload('faculty', rawPayload);
 
     const { data, error } = await supabase
@@ -98,18 +151,31 @@ export const createFaculty = async (req: AuthRequest, res: express.Response) => 
       .select('*')
       .single();
 
+    console.error('Faculty insert response:', { data, error });
+
     if (error) {
-      return res.status(500).json({ error: error.message });
+      console.error('Faculty Save Supabase Insert Error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+        details: error,
+      });
     }
 
-    if (subjects && subjects.length > 0) {
-      const joinRows = subjects.map(subjectId => ({
+    if (body.subjects && body.subjects.length > 0) {
+      const joinRows = body.subjects.map(subjectId => ({
         faculty_id: data.id,
         subject_id: subjectId,
       }));
       const { error: joinError } = await supabase.from('faculty_subjects').insert(joinRows);
+      console.error('Faculty subject join response:', { joinError });
       if (joinError) {
-        return res.status(500).json({ error: joinError.message });
+        console.error('Faculty Save Subjects Insert Error:', joinError);
+        return res.status(500).json({
+          success: false,
+          error: joinError.message,
+          details: joinError,
+        });
       }
     }
 
@@ -119,25 +185,41 @@ export const createFaculty = async (req: AuthRequest, res: express.Response) => 
       email: data.email,
       phone: data.phone,
       availability: data.availability || [],
-      subjects: subjects || [],
+      subjects: body.subjects || [],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error('Faculty Save Error:', err, { body: req.body, stack: err.stack });
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    });
   }
 };
 
 export const updateFaculty = async (req: AuthRequest, res: express.Response) => {
+  console.error('Faculty Update Request body:', JSON.stringify(req.body));
+
   try {
     const { id } = req.params;
-    const { name, email, phone, availability, subjects } = req.body as {
-      name?: string;
-      email?: string;
-      phone?: string;
-      availability?: string[];
-      subjects?: string[];
-    };
+    const incoming = normalizeFacultyPayload(req.body);
+    const validationErrors = validateFacultyPayload(incoming);
 
-    const rawUpdate = { name, email, phone, availability: availability || [] };
+    if (validationErrors.length > 0) {
+      console.error('Faculty Update Validation Failed:', validationErrors, 'body:', req.body);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid faculty payload.',
+        issues: validationErrors,
+      });
+    }
+
+    const rawUpdate = {
+      name: incoming.name,
+      email: incoming.email,
+      phone: incoming.phone,
+      availability: incoming.availability,
+    };
     const payload = await filterPayload('faculty', rawUpdate);
 
     const { data, error } = await supabase
@@ -148,23 +230,42 @@ export const updateFaculty = async (req: AuthRequest, res: express.Response) => 
       .select('*')
       .single();
 
+    console.error('Faculty update response:', { data, error });
+
     if (error) {
-      return res.status(500).json({ error: error.message });
+      console.error('Faculty Update Supabase Error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+        details: error,
+      });
     }
 
     const { error: clearError } = await supabase.from('faculty_subjects').delete().eq('faculty_id', id);
+    console.error('Faculty update clear subjects response:', { clearError });
     if (clearError) {
-      return res.status(500).json({ error: clearError.message });
+      console.error('Faculty Update Clear Subjects Error:', clearError);
+      return res.status(500).json({
+        success: false,
+        error: clearError.message,
+        details: clearError,
+      });
     }
 
-    if (subjects && subjects.length > 0) {
-      const joinRows = subjects.map(subjectId => ({
+    if (incoming.subjects && incoming.subjects.length > 0) {
+      const joinRows = incoming.subjects.map(subjectId => ({
         faculty_id: id,
         subject_id: subjectId,
       }));
       const { error: joinError } = await supabase.from('faculty_subjects').insert(joinRows);
+      console.error('Faculty update subject join response:', { joinError });
       if (joinError) {
-        return res.status(500).json({ error: joinError.message });
+        console.error('Faculty Update Subjects Insert Error:', joinError);
+        return res.status(500).json({
+          success: false,
+          error: joinError.message,
+          details: joinError,
+        });
       }
     }
 
@@ -174,10 +275,15 @@ export const updateFaculty = async (req: AuthRequest, res: express.Response) => 
       email: data.email,
       phone: data.phone,
       availability: data.availability || [],
-      subjects: subjects || [],
+      subjects: incoming.subjects || [],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error('Faculty Update Error:', err, { body: req.body, stack: err.stack });
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    });
   }
 };
 
