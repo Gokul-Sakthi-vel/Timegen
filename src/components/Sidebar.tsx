@@ -182,3 +182,5 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, isMobileOpen, set
     </>
   );
 }
+
+          return (
