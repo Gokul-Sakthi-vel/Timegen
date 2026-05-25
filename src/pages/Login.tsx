@@ -9,7 +9,6 @@ import {
   Eye, 
   EyeOff, 
   Loader2,
-  CheckCircle2,
   User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,7 +17,7 @@ import { useApp } from '../context/AppContext';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, loginWithGoogle, sendEmailOtp, verifyEmailOtp, updatePassword, completeOnboarding, user, isAuthenticated } = useApp();
+  const { login, loginWithGoogle, signup, user, isAuthenticated } = useApp();
 
   // Sign in state
   const [email, setEmail] = useState('');
@@ -36,34 +35,18 @@ export default function Login() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   
-  // OTP state
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
 
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
 
-  // Monitor auth state during signup flow
+  // Redirect if authenticated with completed onboarding
   useEffect(() => {
-    // Only apply this logic if we're in signup mode and showing OTP section
-    if (isSignupMode && signupEmail && (otpSent || otpVerified)) {
-      // If user becomes authenticated but hasn't completed signup form
-      if (isAuthenticated && user && !acceptedTerms && otpVerified) {
-        // User is logged in, waiting for password + terms acceptance
-        setSignupName(user.name || signupName);
-      }
-    }
-    // If authenticated and signup mode is off, redirect to dashboard after brief delay
-    if (isAuthenticated && !isSignupMode && !signupEmail && user?.onboardingCompleted) {
+    if (isAuthenticated && user?.onboardingCompleted && !isSignupMode) {
       navigate(from === '/login' ? '/' : from, { replace: true });
     }
-  }, [isAuthenticated, user, isSignupMode, signupEmail, acceptedTerms, otpVerified, navigate, from, signupName]);
+  }, [isAuthenticated, user?.onboardingCompleted, isSignupMode, navigate, from]);
 
   const validation = useMemo(() => {
     const errors: Record<string, string> = {};
@@ -122,18 +105,13 @@ export default function Login() {
 
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (Object.keys(validation.errors).length > 0) return;
+    if (Object.keys(validation.errors).length > 0 || !acceptedTerms) return;
     
     setError('');
     setIsSubmitting(true);
     try {
-      await sendEmailOtp(signupEmail, 'signup', {
-        name: signupName,
-        full_name: signupName,
-        onboarding_completed: false,
-        is_new_user: true,
-      });
-      setOtpSent(true);
+      await signup(signupName, signupEmail, signupPassword);
+      navigate(from === '/login' ? '/' : from, { replace: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Signup failed';
       if (msg.includes('already registered') || msg.includes('already exists')) {
@@ -146,346 +124,15 @@ export default function Login() {
     }
   };
 
-  const handleSendOtp = async () => {
-    if (!signupEmail) return;
-    setError('');
-    setIsSendingOtp(true);
-    try {
-      await sendEmailOtp(signupEmail, 'signup', {
-        name: signupName,
-        full_name: signupName,
-        onboarding_completed: false,
-        is_new_user: true,
-      });
-      setOtpSent(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send verification code.');
-    } finally {
-      setIsSendingOtp(false);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!signupEmail || !otp.trim()) return;
-    setError('');
-    setIsVerifyingOtp(true);
-    try {
-      await verifyEmailOtp(signupEmail, otp, 'signup');
-      // Add small delay to ensure state is stable before marking as verified
-      setTimeout(() => {
-        setOtpVerified(true);
-      }, 100);
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Invalid verification code.';
-      setError(`${errorMsg} - Please try again or create a new account.`);
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
-
-  const handleFinishSetup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!acceptedTerms || !otpVerified || !signupName.trim() || !signupPassword || signupPassword !== confirmPassword) return;
-    setError('');
-    setIsSubmitting(true);
-    try {
-      await updatePassword(signupPassword);
-      await completeOnboarding(signupName);
-      // Reset signup form and go back to login
-      setIsSignupMode(false);
-      setSignupName('');
-      setSignupEmail('');
-      setSignupPassword('');
-      setConfirmPassword('');
-      setOtp('');
-      setOtpSent(false);
-      setOtpVerified(false);
-      setAcceptedTerms(false);
-      setError('');
-      // Optional: show success message before redirecting
-      setTimeout(() => {
-        navigate(from === '/login' ? '/' : from, { replace: true });
-      }, 500);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not finish account setup.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleBackToLogin = () => {
     setIsSignupMode(false);
     setSignupName('');
     setSignupEmail('');
     setSignupPassword('');
     setConfirmPassword('');
-    setOtp('');
-    setOtpSent(false);
-    setOtpVerified(false);
     setAcceptedTerms(false);
     setError('');
   };
-
-  const handleBackToSignupForm = () => {
-    setOtp('');
-    setOtpSent(false);
-    setOtpVerified(false);
-    setError('');
-  };
-
-  // Show OTP section if we're in signup mode and have pending email
-  if (isSignupMode && signupEmail && (otpSent || otpVerified)) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'var(--bg)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px 16px',
-      }}>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          style={{ width: '100%', maxWidth: 440 }}
-        >
-          <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <div className="logo-badge" style={{ width: 44, height: 44, borderRadius: 12, margin: '0 auto 12px' }}>
-              <Calendar style={{ width: 22, height: 22 }} />
-            </div>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.04em', margin: '0 0 6px' }}>
-              Create your account
-            </h1>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-              {otpVerified ? 'Create a password to finish setup' : 'Verify your email to continue'}
-            </p>
-          </div>
-
-          <form
-            onSubmit={handleFinishSetup}
-            style={{
-              background: 'var(--surface)',
-              border: '1.5px solid var(--border)',
-              borderRadius: 20,
-              padding: '24px 28px',
-              boxShadow: 'var(--shadow-modal)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-            }}
-          >
-            <div>
-              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Full Name</label>
-              <div style={{ position: 'relative' }}>
-                <User style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
-                <input
-                  type="text"
-                  required
-                  value={signupName}
-                  onChange={e => setSignupName(e.target.value)}
-                  placeholder="Enter your full name"
-                  className="field-input"
-                  style={{ paddingLeft: 38, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem' }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Verified Email</label>
-              <div style={{ position: 'relative' }}>
-                <Mail style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
-                <input
-                  type="email"
-                  value={signupEmail}
-                  disabled
-                  className="field-input"
-                  style={{ paddingLeft: 38, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem', opacity: 0.75 }}
-                />
-              </div>
-            </div>
-
-            {!otpVerified && (
-              <>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    inputMode="numeric"
-                    value={otp}
-                    onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="Enter OTP"
-                    className="field-input"
-                    style={{ flex: 1, borderRadius: 10, padding: '10px 14px', fontSize: '0.9rem', letterSpacing: '0.08em' }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    onClick={handleSendOtp}
-                    disabled={isSendingOtp}
-                    style={{ borderRadius: 10, whiteSpace: 'nowrap' }}
-                  >
-                    {isSendingOtp ? <Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> : otpSent ? 'Resend' : 'Send OTP'}
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={handleVerifyOtp}
-                  disabled={!otp.trim() || isVerifyingOtp || otpVerified}
-                  style={{ borderRadius: 10, justifyContent: 'center' }}
-                >
-                  {isVerifyingOtp ? <><Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> Verifying...</> : otpVerified ? 'Email Verified ✓' : 'Verify Email'}
-                </button>
-
-                <div style={{ padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--accent)', background: 'rgba(242, 201, 76, 0.1)', color: 'var(--accent)', fontSize: '0.78rem', fontWeight: 600, lineHeight: 1.5 }}>
-                  📧 Check your email for the OTP code. It's valid for 10 minutes.
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleBackToSignupForm}
-                  className="btn btn-outline"
-                  style={{ width: '100%', padding: '10px 14px', fontSize: '0.85rem', borderRadius: 10, justifyContent: 'center' }}
-                >
-                  Back
-                </button>
-              </>
-            )}
-
-            {otpVerified && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Create Password</label>
-                  <div style={{ position: 'relative' }}>
-                    <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
-                    <input
-                      type={showSignupPassword ? 'text' : 'password'}
-                      required
-                      value={signupPassword}
-                      onChange={e => setSignupPassword(e.target.value)}
-                      placeholder="Create a password"
-                      className="field-input"
-                      style={{ paddingLeft: 38, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSignupPassword(!showSignupPassword)}
-                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                    >
-                      {showSignupPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-
-                  {signupPassword && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Strength</span>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: passwordStrength.color }}>{passwordStrength.label}</span>
-                      </div>
-                      <div style={{ height: 3, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden' }}>
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${passwordStrength.score}%`, backgroundColor: passwordStrength.color }}
-                          style={{ height: '100%' }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Confirm Password</label>
-                  <div style={{ position: 'relative' }}>
-                    <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
-                    <input
-                      type={showConfirmPassword ? 'text' : 'password'}
-                      required
-                      value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm password"
-                      className="field-input"
-                      style={{ paddingLeft: 38, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem', borderColor: validation.errors.confirmPassword ? 'var(--danger-text)' : 'var(--border)' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                    >
-                      {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  {validation.errors.confirmPassword && (
-                    <p style={{ fontSize: '0.7rem', color: 'var(--danger-text)', margin: '4px 0 0', fontWeight: 500 }}>
-                      {validation.errors.confirmPassword}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.45, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={acceptedTerms}
-                onChange={e => setAcceptedTerms(e.target.checked)}
-                style={{ marginTop: 2, accentColor: 'var(--accent)' }}
-              />
-              <span>
-                I agree to the <Link to="/terms" style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Terms</Link> and <Link to="/privacy" style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Privacy Policy</Link>.
-              </span>
-            </label>
-
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--danger-bg)', border: '1.5px solid var(--danger-border)' }}
-                >
-                  <AlertCircle style={{ width: 16, height: 16, color: 'var(--danger-text)', flexShrink: 0 }} />
-                  <p style={{ fontSize: '0.8rem', color: 'var(--danger-text)', margin: 0, fontWeight: 500 }}>{error}</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {otpVerified && !acceptedTerms && (
-              <div style={{ padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--accent)', background: 'rgba(242, 201, 76, 0.1)', color: 'var(--accent)', fontSize: '0.78rem', fontWeight: 600, lineHeight: 1.5 }}>
-                ✅ Email verified! Now create your password to complete your account setup.
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={!otpVerified || !acceptedTerms || !signupName.trim() || !signupPassword || signupPassword !== confirmPassword || isSubmitting}
-              className="btn btn-primary"
-              style={{ width: '100%', padding: '12px 20px', fontSize: '0.9rem', borderRadius: 10, marginTop: 4, justifyContent: 'center' }}
-            >
-              {isSubmitting ? <><Loader2 className="animate-spin" style={{ width: 18, height: 18 }} /> Creating Account...</> : <>Complete Setup <ArrowRight style={{ width: 16, height: 16 }} /></>}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleBackToLogin}
-              className="btn btn-outline"
-              style={{ width: '100%', padding: '12px 20px', fontSize: '0.9rem', borderRadius: 10, justifyContent: 'center' }}
-            >
-              Back to Login
-            </button>
-          </form>
-
-          <style>{`
-            @keyframes spin {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-            .animate-spin {
-              animation: spin 1s linear infinite;
-            }
-          `}</style>
-        </motion.div>
-      </div>
-    );
-  }
 
   // Show signup form if in signup mode
   if (isSignupMode) {
@@ -522,10 +169,10 @@ export default function Login() {
               margin: '0 0 6px',
               lineHeight: 1.1
             }}>
-              Get started with Timetable AI
+              Create Account
             </h1>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-              Build smart schedules in minutes
+              Get started with Timetable AI
             </p>
           </div>
 
@@ -539,7 +186,8 @@ export default function Login() {
           }}>
             <button
               type="button"
-              onClick={loginWithGoogle}
+              onClick={handleGoogle}
+              disabled={oauthLoading || isSubmitting}
               className="btn btn-outline"
               style={{ 
                 width: '100%', 
@@ -554,13 +202,17 @@ export default function Login() {
                 fontWeight: 600,
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-              </svg>
-              Continue with Google
+              {oauthLoading ? (
+                <Loader2 className="animate-spin" style={{ width: 18, height: 18 }} />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+              )}
+              {oauthLoading ? 'Creating...' : 'Continue with Google'}
             </button>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -584,7 +236,7 @@ export default function Login() {
               </div>
 
               <div>
-                <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Work Email</label>
+                <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Email</label>
                 <div style={{ position: 'relative' }}>
                   <Mail style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
                   <input
@@ -615,21 +267,90 @@ export default function Login() {
               </div>
 
               <div>
-                <div style={{ padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-secondary)', fontSize: '0.78rem', fontWeight: 600, lineHeight: 1.5 }}>
-                  Password creation appears after email OTP verification.
+                <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Create Password</label>
+                <div style={{ position: 'relative' }}>
+                  <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
+                  <input
+                    type={showSignupPassword ? 'text' : 'password'}
+                    required
+                    value={signupPassword}
+                    onChange={e => setSignupPassword(e.target.value)}
+                    placeholder="Create a password"
+                    className="field-input"
+                    style={{ paddingLeft: 38, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSignupPassword(!showSignupPassword)}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  >
+                    {showSignupPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
+
+                {signupPassword && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Strength</span>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: passwordStrength.color }}>{passwordStrength.label}</span>
+                    </div>
+                    <div style={{ height: 3, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden' }}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${passwordStrength.score}%`, backgroundColor: passwordStrength.color }}
+                        style={{ height: '100%' }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
+
+              <div>
+                <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Confirm Password</label>
+                <div style={{ position: 'relative' }}>
+                  <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm password"
+                    className="field-input"
+                    style={{ paddingLeft: 38, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem', borderColor: validation.errors.confirmPassword ? 'var(--danger-text)' : 'var(--border)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {validation.errors.confirmPassword && (
+                  <p style={{ fontSize: '0.7rem', color: 'var(--danger-text)', margin: '4px 0 0', fontWeight: 500 }}>
+                    {validation.errors.confirmPassword}
+                  </p>
+                )}
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.45, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={e => setAcceptedTerms(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: 'var(--accent)' }}
+                />
+                <span>
+                  I agree to the <Link to="/terms" style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Terms</Link> and <Link to="/privacy" style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Privacy Policy</Link>.
+                </span>
+              </label>
 
               <AnimatePresence>
                 {error && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '10px 12px', borderRadius: 10,
-                      background: 'var(--danger-bg)', border: '1.5px solid var(--danger-border)',
-                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--danger-bg)', border: '1.5px solid var(--danger-border)' }}
                   >
                     <AlertCircle style={{ width: 16, height: 16, color: 'var(--danger-text)', flexShrink: 0 }} />
                     <p style={{ fontSize: '0.8rem', color: 'var(--danger-text)', margin: 0, fontWeight: 500 }}>{error}</p>
@@ -641,17 +362,17 @@ export default function Login() {
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 type="submit"
-                disabled={isSubmitting || Object.keys(validation.errors).length > 0}
+                disabled={isSubmitting || Object.keys(validation.errors).length > 0 || !acceptedTerms || !signupName.trim() || !signupEmail || !signupPassword || signupPassword !== confirmPassword}
                 className="btn btn-primary"
                 style={{ width: '100%', padding: '12px 20px', fontSize: '0.9rem', borderRadius: 10, marginTop: 4, gap: 8 }}
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="animate-spin" style={{ width: 18, height: 18 }} />
-                    Sending OTP...
+                    Creating Account...
                   </>
                 ) : (
-                  <>Send OTP <ArrowRight style={{ width: 16, height: 16 }} /></>
+                  <>Create Account <ArrowRight style={{ width: 16, height: 16 }} /></>
                 )}
               </motion.button>
             </form>
