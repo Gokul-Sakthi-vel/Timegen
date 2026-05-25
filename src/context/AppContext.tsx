@@ -167,7 +167,11 @@ const mapSupabaseUser = (u: any): User => {
   const createdAt = u.created_at ? new Date(u.created_at).getTime() : 0;
   const lastSignInAt = u.last_sign_in_at ? new Date(u.last_sign_in_at).getTime() : 0;
   const isFirstOAuthLogin = Boolean(createdAt && lastSignInAt && Math.abs(lastSignInAt - createdAt) < 120000);
-  const isOAuth = Array.isArray(u.identities) && u.identities.some((identity: any) => identity.provider && identity.provider !== 'email');
+  const identityProvider = Array.isArray(u.identities)
+    ? u.identities.find((identity: any) => identity.provider)?.provider
+    : undefined;
+  const knownOauthProvider = identityProvider || u.app_metadata?.provider || u.user_metadata?.provider;
+  const isOAuth = Boolean(knownOauthProvider && knownOauthProvider !== 'email');
   const mustOnboard = metadata.onboarding_completed === false || (!isOAuth && isFirstOAuthLogin && !metadataCompleted && !localCompleted);
   const onboardingCompleted = metadataCompleted || localCompleted || !mustOnboard;
 
