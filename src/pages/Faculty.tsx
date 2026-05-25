@@ -266,6 +266,7 @@ export default function Faculty() {
                 borderRadius: 20, padding: '20px',
                 transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                 position: 'relative',
+                zIndex: activeMenuId === f.id ? 9999 : 0,
                 cursor: isSelectionMode ? 'pointer' : 'default',
                 outline: 'none',
                 boxShadow: isSelected(f.id) ? '0 10px 25px rgba(0,0,0,0.1)' : 'none',
