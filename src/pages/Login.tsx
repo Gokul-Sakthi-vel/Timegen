@@ -41,12 +41,12 @@ export default function Login() {
 
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
 
-  // Redirect if authenticated with completed onboarding
+  // Redirect if authenticated with completed onboarding (except during manual signup form submission)
   useEffect(() => {
-    if (isAuthenticated && user?.onboardingCompleted && !isSignupMode) {
-      navigate(from === '/login' ? '/' : from, { replace: true });
+    if (isAuthenticated && user?.onboardingCompleted) {
+      navigate('/', { replace: true });
     }
-  }, [isAuthenticated, user?.onboardingCompleted, isSignupMode, navigate, from]);
+  }, [isAuthenticated, user?.onboardingCompleted, navigate]);
 
   const validation = useMemo(() => {
     const errors: Record<string, string> = {};
@@ -97,6 +97,10 @@ export default function Login() {
     setOauthLoading(true);
     try {
       await loginWithGoogle();
+      // Redirect to dashboard after successful Google sign-in
+      setTimeout(() => {
+        navigate('/', { replace: true });
+      }, 500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in failed.');
       setOauthLoading(false);
