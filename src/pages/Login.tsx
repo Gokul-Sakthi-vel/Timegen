@@ -106,16 +106,19 @@ export default function Login() {
     setError('');
     setSuccess('');
     setIsSubmitting(true);
+    
+    const trimmedEmail = email.trim().toLowerCase();
+    console.log('[Login handleSubmit] Submitting login form:', { email: trimmedEmail, passwordLength: password.length });
+    
     try {
-      const trimmedEmail = email.trim().toLowerCase();
       await login(trimmedEmail, password);
+      console.log('[Login handleSubmit] Login success. Navigating...');
       navigate(from, { replace: true });
     } catch (err) {
+      console.error('[Login handleSubmit] Login caught exception:', err);
       const errMsg = err instanceof Error ? err.message : 'Invalid email or password';
       if (errMsg.toLowerCase().includes('email not confirmed') || errMsg.toLowerCase().includes('email not verified')) {
         setError('Please verify your email before logging in. A confirmation link has been sent to your email.');
-      } else if (errMsg.toLowerCase().includes('invalid login credentials') || errMsg.toLowerCase().includes('invalid credentials')) {
-        setError('Invalid email or password');
       } else {
         setError(errMsg);
       }
@@ -137,22 +140,36 @@ export default function Login() {
 
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (Object.keys(validation.errors).length > 0 || !acceptedTerms) return;
+    if (Object.keys(validation.errors).length > 0 || !acceptedTerms) {
+      console.warn('[Login handleSignupSubmit] Form validation failed or terms not accepted:', { validationErrors: validation.errors, acceptedTerms });
+      return;
+    }
     
     setError('');
     setSuccess('');
     setIsSubmitting(true);
+    
+    const trimmedEmail = signupEmail.trim().toLowerCase();
+    console.log('[Login handleSignupSubmit] Submitting signup form:', { name: signupName, email: trimmedEmail, passwordLength: signupPassword.length });
+    
     try {
-      const trimmedEmail = signupEmail.trim().toLowerCase();
       const data = await signup(signupName, trimmedEmail, signupPassword);
+      console.log('[Login handleSignupSubmit] Signup successful response:', data);
+      
       if (data && data.session) {
+        console.log('[Login handleSignupSubmit] Session automatically created. Logging out for manual sign in...');
         await logout();
+      } else {
+        console.log('[Login handleSignupSubmit] No session created on signup.');
       }
+      
       setSignupName('');
       setSignupEmail('');
       setSignupPassword('');
       setConfirmPassword('');
       setAcceptedTerms(false);
+      
+      console.log('[Login handleSignupSubmit] Navigating to /login with pre-filled state...');
       navigate('/login', { 
         replace: true, 
         state: { 
@@ -161,6 +178,7 @@ export default function Login() {
         } 
       });
     } catch (err) {
+      console.error('[Login handleSignupSubmit] Signup caught exception:', err);
       const msg = err instanceof Error ? err.message : 'Signup failed';
       if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
         setError('This email is already registered. Try signing in.');

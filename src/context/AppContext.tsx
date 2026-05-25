@@ -175,12 +175,14 @@ const mapSupabaseUser = (u: any): User => {
 };
 
 const syncUserToDb = async (u: any) => {
+  console.log('[syncUserToDb] Started sync for user:', { id: u.id, email: u.email, metadata: u.user_metadata });
   try {
     const metadata = u.user_metadata || {};
     const name = metadata.name || metadata.full_name || u.email?.split('@')[0] || 'User';
     const email = u.email ?? '';
 
     // Check if the user already exists in public.users by ID
+    console.log('[syncUserToDb] Checking if user exists by ID:', u.id);
     const { data: existingUserById, error: idError } = await supabaseClient
       .from('users')
       .select('id')
@@ -188,14 +190,17 @@ const syncUserToDb = async (u: any) => {
       .maybeSingle();
 
     if (idError) {
-      console.warn('Error checking user by ID:', idError);
+      console.warn('[syncUserToDb] Error checking user by ID:', idError);
     }
+    console.log('[syncUserToDb] Check by ID result:', existingUserById);
 
     if (existingUserById) {
+      console.log('[syncUserToDb] User already exists by ID. No sync needed.');
       return;
     }
 
     // Check if user exists by email (e.g. if they signed up via email previously, or to link accounts)
+    console.log('[syncUserToDb] Checking if user exists by email:', email);
     const { data: existingUserByEmail, error: emailError } = await supabaseClient
       .from('users')
       .select('id')
@@ -203,32 +208,39 @@ const syncUserToDb = async (u: any) => {
       .maybeSingle();
 
     if (emailError) {
-      console.warn('Error checking user by email:', emailError);
+      console.warn('[syncUserToDb] Error checking user by email:', emailError);
     }
+    console.log('[syncUserToDb] Check by email result:', existingUserByEmail);
 
     if (existingUserByEmail) {
       // Update existing record with the Supabase Auth ID
+      console.log('[syncUserToDb] User exists by email. Updating ID to:', u.id);
       const { error: updateError } = await supabaseClient
         .from('users')
         .update({ id: u.id, name })
         .eq('email', email);
 
       if (updateError) {
-        console.warn('Error updating existing user ID by email:', updateError);
+        console.warn('[syncUserToDb] Error updating existing user ID by email:', updateError);
+      } else {
+        console.log('[syncUserToDb] Successfully updated existing user record.');
       }
       return;
     }
 
     // Insert new user record
+    console.log('[syncUserToDb] User does not exist. Inserting new record in public.users:', { id: u.id, name, email });
     const { error: insertError } = await supabaseClient
       .from('users')
       .insert([{ id: u.id, name, email, password: '' }]);
 
     if (insertError) {
-      console.warn('Error inserting user to public.users:', insertError);
+      console.warn('[syncUserToDb] Error inserting user to public.users:', insertError);
+    } else {
+      console.log('[syncUserToDb] Successfully inserted user into public.users.');
     }
   } catch (error) {
-    console.error('Unhandled error during user db sync:', error);
+    console.error('[syncUserToDb] Unhandled error during user db sync:', error);
   }
 };
 
@@ -508,9 +520,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     loadSession();
 
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        console.log('[onAuthStateChange] Event:', event, 'Session status:', session ? 'Active' : 'None');
         if (!isMounted) return;
         if (session?.user) {
+          console.log('[onAuthStateChange] User in session:', { id: session.user.id, email: session.user.email });
           const metadata = session.user.user_metadata || {};
           const savedTheme = metadata.theme as 'light' | 'dark' | 'system' | undefined;
           setState(prev => ({
@@ -531,6 +545,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                                 hash.includes('error=') ||
                                 search.includes('code=') ||
                                 search.includes('error=');
+          console.log('[onAuthStateChange] No active session. hasAuthParams:', hasAuthParams);
           if (!hasAuthParams) {
             setState(prev => ({ ...prev, isAuthenticated: false, user: null }));
             setAuthLoading(false);
@@ -584,12 +599,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
+    console.log('[login] Attempting login with:', { email, passwordLength: password.length });
     const { data, error } = await supabaseClient.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[login] Login error response from Supabase:', error);
+      throw error;
+    }
+
+    console.log('[login] Login success response:', { user: data.user ? { id: data.user.id, email: data.user.email } : null, session: data.session ? 'Active' : 'None' });
 
     if (data.user) {
       setState(prev => ({
@@ -601,6 +622,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signup = async (name: string, email: string, password: string) => {
+    console.log('[signup] Attempting signup with:', { name, email, passwordLength: password.length });
     const { data, error } = await supabaseClient.auth.signUp({
       email,
       password,
@@ -610,7 +632,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       },
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[signup] Signup error response from Supabase:', error);
+      throw error;
+    }
+
+    console.log('[signup] Signup success response:', { user: data.user ? { id: data.user.id, email: data.user.email } : null, session: data.session ? 'Active' : 'None' });
     if (!data.user) throw new Error('Signup failed');
     return data;
   };
