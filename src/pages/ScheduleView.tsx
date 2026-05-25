@@ -180,73 +180,66 @@ export default function ScheduleView() {
     return color || '#ffffff';
   };
 
-  const copyComputedStyles = (source: Element, target: Element) => {
-    const computed = window.getComputedStyle(source);
-    for (let i = 0; i < computed.length; i++) {
-      const property = computed[i];
-      (target as HTMLElement).style.setProperty(property, computed.getPropertyValue(property), computed.getPropertyPriority(property));
-    }
-
-    Array.from(source.children).forEach((sourceChild, index) => {
-      const targetChild = target.children[index];
-      if (targetChild) copyComputedStyles(sourceChild, targetChild);
-    });
-  };
-
-  const renderExportCanvas = async (element: HTMLElement) => {
+  const captureTimetableCanvas = async (element: HTMLElement) => {
     await document.fonts?.ready;
 
+    const html2canvas = (await import('html2canvas')).default;
     const width = Math.ceil(element.scrollWidth);
     const height = Math.ceil(element.scrollHeight);
-    const clone = element.cloneNode(true) as HTMLElement;
-    copyComputedStyles(element, clone);
+    const exportHeight = Math.ceil(height * 1.2);
 
-    clone.style.width = `${width}px`;
-    clone.style.height = `${height}px`;
-    clone.style.transform = 'none';
-    clone.style.position = 'relative';
-    clone.style.left = '0';
-    clone.style.top = '0';
+    return html2canvas(element, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      backgroundColor: getExportBackground(),
+      width,
+      height: exportHeight,
+      windowWidth: width,
+      windowHeight: exportHeight,
+      scrollX: 0,
+      scrollY: 0,
+      onclone: clonedDocument => {
+        const clonedExport = clonedDocument.getElementById('timetable-export') as HTMLElement | null;
+        if (!clonedExport) return;
 
-    const wrapper = document.createElement('div');
-    wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-    wrapper.style.width = `${width}px`;
-    wrapper.style.height = `${height}px`;
-    wrapper.style.background = getExportBackground();
-    wrapper.appendChild(clone);
+        clonedExport.style.width = `${width}px`;
+        clonedExport.style.minWidth = `${width}px`;
+        clonedExport.style.height = 'auto';
+        clonedExport.style.minHeight = `${height}px`;
+        clonedExport.style.background = getExportBackground();
+        clonedExport.style.transform = 'none';
 
-    const serialized = new XMLSerializer().serializeToString(wrapper);
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-        <foreignObject width="100%" height="100%">${serialized}</foreignObject>
-      </svg>
-    `;
-    const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+        clonedExport.querySelectorAll<HTMLElement>('*').forEach(node => {
+          if (getComputedStyle(node).position === 'sticky') {
+            node.style.position = 'static';
+          }
+        });
 
-    try {
-      const image = new Image();
-      image.decoding = 'async';
-      image.src = svgUrl;
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error('Could not render timetable export image.'));
-      });
-      if (image.decode) await image.decode().catch(() => undefined);
+        clonedExport.querySelectorAll<HTMLElement>('.timetable-slot-cell').forEach(node => {
+          node.style.padding = '8px';
+          node.style.height = '112px';
+          node.style.minHeight = '112px';
+          node.style.verticalAlign = 'top';
+        });
 
-      const canvas = document.createElement('canvas');
-      const scale = Math.min(window.devicePixelRatio || 2, 2);
-      canvas.width = width * scale;
-      canvas.height = height * scale;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not create export canvas.');
-      ctx.scale(scale, scale);
-      ctx.fillStyle = getExportBackground();
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(image, 0, 0, width, height);
-      return canvas;
-    } finally {
-      URL.revokeObjectURL(svgUrl);
-    }
+        clonedExport.querySelectorAll<HTMLElement>('.timetable-slot-card').forEach(node => {
+          node.style.minHeight = '94px';
+          node.style.height = 'auto';
+          node.style.overflow = 'visible';
+          node.style.justifyContent = 'flex-start';
+          node.style.gap = '8px';
+        });
+
+        clonedExport.querySelectorAll<HTMLElement>('.timetable-slot-meta').forEach(node => {
+          node.style.marginTop = '6px';
+          node.style.paddingTop = '6px';
+          node.style.lineHeight = '1.25';
+          node.style.overflow = 'visible';
+        });
+      }
+    });
   };
 
   const downloadDataUrl = (dataUrl: string, filename: string) => {
@@ -263,7 +256,7 @@ export default function ScheduleView() {
     if (!element) return;
     setIsDownloading(true);
     try {
-      const canvas = await renderExportCanvas(element);
+      const canvas = await captureTimetableCanvas(element);
       downloadDataUrl(canvas.toDataURL('image/png'), `${timetable.name}.png`);
     } catch (err) {
       console.error('Image Export Failed:', err);
@@ -280,7 +273,7 @@ export default function ScheduleView() {
 
     try {
       const { jsPDF } = await import('jspdf');
-      const canvas = await renderExportCanvas(element);
+      const canvas = await captureTimetableCanvas(element);
 
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("l", "mm", "a4");
@@ -531,6 +524,7 @@ export default function ScheduleView() {
                             <td
                               key={`${day}-${entry.start}`}
                               colSpan={colSpan}
+                              className="timetable-slot-cell"
                               style={{ 
                                 borderRight: '1px solid var(--border)', 
                                 padding: 6, 
@@ -545,6 +539,7 @@ export default function ScheduleView() {
                             >
                               {slot && subject ? (
                                 <div
+                                  className="timetable-slot-card"
                                   draggable
                                   onDragStart={() => setDragSource({ classId: cls.id, day, time: entry.start })}
                                   onDragEnd={() => setDragSource(null)}
@@ -577,13 +572,13 @@ export default function ScheduleView() {
                                     </div>
                                     <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3, margin: 0 }}>{subject.name}</h4>
                                   </div>
-                                  <div style={{ marginTop: 8, padding: 0, borderTop: '1px solid rgba(0,0,0,0.03)' }}>
+                                  <div className="timetable-slot-meta" style={{ marginTop: 8, padding: 0, borderTop: '1px solid rgba(0,0,0,0.03)' }}>
                                     <p style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', margin: '8px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{prof?.name ?? '—'}</p>
                                     <p style={{ fontSize: '0.65rem', color: 'var(--text-placeholder)', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room?.name ?? '—'}</p>
                                   </div>
                                 </div>
                               ) : (
-                                <div style={{ minHeight: 70, borderRadius: 10, border: '1.5px dashed var(--border)', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
+                                <div className="timetable-slot-card" style={{ minHeight: 70, borderRadius: 10, border: '1.5px dashed var(--border)', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
                                   <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-placeholder)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Free</span>
                                 </div>
                               )}
