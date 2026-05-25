@@ -22,8 +22,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (user?.onboardingCompleted === false && location.pathname !== '/signup') {
-    return <Navigate to="/signup" state={{ from: location }} replace />;
+  if (user?.onboardingCompleted === false && location.pathname !== '/login') {
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;

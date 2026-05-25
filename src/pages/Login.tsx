@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Calendar, 
@@ -18,7 +18,7 @@ import { useApp } from '../context/AppContext';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, loginWithGoogle, sendEmailOtp, verifyEmailOtp, updatePassword, completeOnboarding } = useApp();
+  const { login, loginWithGoogle, sendEmailOtp, verifyEmailOtp, updatePassword, completeOnboarding, user, isAuthenticated } = useApp();
 
   // Sign in state
   const [email, setEmail] = useState('');
@@ -48,6 +48,22 @@ export default function Login() {
   const [oauthLoading, setOauthLoading] = useState(false);
 
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
+
+  // Monitor auth state during signup flow
+  useEffect(() => {
+    // Only apply this logic if we're in signup mode and showing OTP section
+    if (isSignupMode && signupEmail && (otpSent || otpVerified)) {
+      // If user becomes authenticated but hasn't completed signup form
+      if (isAuthenticated && user && !acceptedTerms && otpVerified) {
+        // User is logged in, waiting for password + terms acceptance
+        setSignupName(user.name || signupName);
+      }
+    }
+    // If authenticated and signup mode is off, redirect to dashboard after brief delay
+    if (isAuthenticated && !isSignupMode && !signupEmail && user?.onboardingCompleted) {
+      navigate(from === '/login' ? '/' : from, { replace: true });
+    }
+  }, [isAuthenticated, user, isSignupMode, signupEmail, acceptedTerms, otpVerified, navigate, from, signupName]);
 
   const validation = useMemo(() => {
     const errors: Record<string, string> = {};
@@ -155,9 +171,13 @@ export default function Login() {
     setIsVerifyingOtp(true);
     try {
       await verifyEmailOtp(signupEmail, otp, 'signup');
-      setOtpVerified(true);
+      // Add small delay to ensure state is stable before marking as verified
+      setTimeout(() => {
+        setOtpVerified(true);
+      }, 100);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid verification code.');
+      const errorMsg = err instanceof Error ? err.message : 'Invalid verification code.';
+      setError(`${errorMsg} - Please try again or create a new account.`);
     } finally {
       setIsVerifyingOtp(false);
     }
@@ -203,6 +223,13 @@ export default function Login() {
     setOtpSent(false);
     setOtpVerified(false);
     setAcceptedTerms(false);
+    setError('');
+  };
+
+  const handleBackToSignupForm = () => {
+    setOtp('');
+    setOtpSent(false);
+    setOtpVerified(false);
     setError('');
   };
 
@@ -307,7 +334,20 @@ export default function Login() {
                   disabled={!otp.trim() || isVerifyingOtp || otpVerified}
                   style={{ borderRadius: 10, justifyContent: 'center' }}
                 >
-                  {isVerifyingOtp ? <><Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> Verifying...</> : otpVerified ? 'Email Verified' : 'Verify Email'}
+                  {isVerifyingOtp ? <><Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> Verifying...</> : otpVerified ? 'Email Verified ✓' : 'Verify Email'}
+                </button>
+
+                <div style={{ padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--accent)', background: 'rgba(242, 201, 76, 0.1)', color: 'var(--accent)', fontSize: '0.78rem', fontWeight: 600, lineHeight: 1.5 }}>
+                  📧 Check your email for the OTP code. It's valid for 10 minutes.
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleBackToSignupForm}
+                  className="btn btn-outline"
+                  style={{ width: '100%', padding: '10px 14px', fontSize: '0.85rem', borderRadius: 10, justifyContent: 'center' }}
+                >
+                  Back
                 </button>
               </>
             )}
@@ -408,13 +448,19 @@ export default function Login() {
               )}
             </AnimatePresence>
 
+            {otpVerified && !acceptedTerms && (
+              <div style={{ padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--accent)', background: 'rgba(242, 201, 76, 0.1)', color: 'var(--accent)', fontSize: '0.78rem', fontWeight: 600, lineHeight: 1.5 }}>
+                ✅ Email verified! Now create your password to complete your account setup.
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={!otpVerified || !acceptedTerms || !signupName.trim() || !signupPassword || signupPassword !== confirmPassword || isSubmitting}
               className="btn btn-primary"
               style={{ width: '100%', padding: '12px 20px', fontSize: '0.9rem', borderRadius: 10, marginTop: 4, justifyContent: 'center' }}
             >
-              {isSubmitting ? <><Loader2 className="animate-spin" style={{ width: 18, height: 18 }} /> Creating...</> : <>Complete Setup <ArrowRight style={{ width: 16, height: 16 }} /></>}
+              {isSubmitting ? <><Loader2 className="animate-spin" style={{ width: 18, height: 18 }} /> Creating Account...</> : <>Complete Setup <ArrowRight style={{ width: 16, height: 16 }} /></>}
             </button>
 
             <button
