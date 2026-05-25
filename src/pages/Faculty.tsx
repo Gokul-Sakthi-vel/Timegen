@@ -23,7 +23,6 @@ export default function Faculty() {
   const [searchQuery, setSearchQuery] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
   const menuButtonRefs = useRef<{ [key: string]: HTMLButtonElement }>({});
-  const [dropdownPositions, setDropdownPositions] = useState<{ [key: string]: 'above' | 'below' }>({});
   const [dropdownCoords, setDropdownCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
@@ -140,7 +139,6 @@ export default function Faculty() {
       setActiveMenuId(null);
     } else {
       const position = getDropdownPosition(facultyId);
-      setDropdownPositions(prev => ({ ...prev, [facultyId]: position }));
       updateDropdownCoords(facultyId, position);
       setActiveMenuId(facultyId);
     }
@@ -204,6 +202,7 @@ export default function Faculty() {
     const matchesSubject = subjectFilter === 'all' || f.subjects.includes(subjectFilter);
     return matchesSearch && matchesSubject;
   });
+  const activeFaculty = activeMenuId ? faculty.find(f => f.id === activeMenuId) : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -364,85 +363,6 @@ export default function Faculty() {
                     <MoreVertical style={{ width: 20, height: 20 }} />
                   </button>
 
-                  <AnimatePresence>
-                    {activeMenuId === f.id && typeof document !== 'undefined' && createPortal(
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                        transition={{ duration: 0.15, ease: 'easeOut' }}
-                        className="faculty-card-dropdown"
-                        style={{
-                          position: 'fixed',
-                          top: dropdownCoords.top,
-                          left: dropdownCoords.left,
-                          width: 170, background: 'var(--surface)',
-                          border: '1.5px solid var(--border)', borderRadius: 14,
-                          boxShadow: '0 12px 35px rgba(0,0,0,0.15)',
-                          padding: 6, zIndex: 9999,
-                          overflow: 'visible', pointerEvents: 'auto'
-                        }}
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <button
-                          className="menu-item"
-                          onClick={() => {
-                            if (isSelectionMode) toggleItem(f.id);
-                            else selectSingle(f.id);
-                            setActiveMenuId(null);
-                          }}
-                        >
-                          {isSelected(f.id) ? (
-                            <><CheckSquare className="menu-icon" /> Deselect</>
-                          ) : (
-                            <><Square className="menu-icon" /> Select</>
-                          )}
-                        </button>
-                        <div style={{ height: 1.5, background: 'var(--border)', margin: '4px 0', opacity: 0.5 }} />
-                        <button
-                          className="menu-item"
-                          onClick={() => {
-                            const link = `https://wa.me/${f.phone?.replace(/[^0-9]/g, '')}`;
-                            window.open(link, '_blank');
-                            setActiveMenuId(null);
-                          }}
-                        >
-                          <MessageCircle className="menu-icon" /> WhatsApp
-                        </button>
-                        <button
-                          className="menu-item"
-                          onClick={() => { handleEdit(f); setActiveMenuId(null); }}
-                        >
-                          <Edit2 className="menu-icon" /> Edit Profile
-                        </button>
-                        <button
-                          className="menu-item menu-item-danger"
-                          onClick={async () => {
-                            setDeleteConfirm({
-                              isOpen: true,
-                              title: 'Delete Faculty',
-                              message: `Are you sure you want to delete ${f.name}? This action cannot be undone.`,
-                              onConfirm: async () => {
-                                try {
-                                  await deleteFaculty(f.id);
-                                  setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
-                                } catch (err: any) {
-                                  handleError(err, () => {
-                                      deleteFaculty(f.id);
-                                      setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
-                                  });
-                                }
-                              }
-                            });
-                            setActiveMenuId(null);
-                          }}
-                        >
-                          <Trash2 className="menu-icon" /> Remove
-                        </button>
-                      </motion.div>,
-                      document.body
-                    )}
-                  </AnimatePresence>
                 </div>
               </div>
 
@@ -478,6 +398,89 @@ export default function Faculty() {
             </motion.div>
           ))}
         </div>
+      )}
+
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {activeFaculty && (
+            <motion.div
+              key={activeFaculty.id}
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
+              className="faculty-card-dropdown"
+              style={{
+                position: 'fixed',
+                top: dropdownCoords.top,
+                left: dropdownCoords.left,
+                width: 170, background: 'var(--surface)',
+                border: '1.5px solid var(--border)', borderRadius: 14,
+                boxShadow: '0 12px 35px rgba(0,0,0,0.15)',
+                padding: 6, zIndex: 9999,
+                overflow: 'visible', pointerEvents: 'auto'
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <button
+                className="menu-item"
+                onClick={() => {
+                  if (isSelectionMode) toggleItem(activeFaculty.id);
+                  else selectSingle(activeFaculty.id);
+                  setActiveMenuId(null);
+                }}
+              >
+                {isSelected(activeFaculty.id) ? (
+                  <><CheckSquare className="menu-icon" /> Deselect</>
+                ) : (
+                  <><Square className="menu-icon" /> Select</>
+                )}
+              </button>
+              <div style={{ height: 1.5, background: 'var(--border)', margin: '4px 0', opacity: 0.5 }} />
+              <button
+                className="menu-item"
+                onClick={() => {
+                  const link = `https://wa.me/${activeFaculty.phone?.replace(/[^0-9]/g, '')}`;
+                  window.open(link, '_blank');
+                  setActiveMenuId(null);
+                }}
+              >
+                <MessageCircle className="menu-icon" /> WhatsApp
+              </button>
+              <button
+                className="menu-item"
+                onClick={() => { handleEdit(activeFaculty); setActiveMenuId(null); }}
+              >
+                <Edit2 className="menu-icon" /> Edit Profile
+              </button>
+              <button
+                className="menu-item menu-item-danger"
+                onClick={async () => {
+                  setDeleteConfirm({
+                    isOpen: true,
+                    title: 'Delete Faculty',
+                    message: `Are you sure you want to delete ${activeFaculty.name}? This action cannot be undone.`,
+                    onConfirm: async () => {
+                      try {
+                        await deleteFaculty(activeFaculty.id);
+                        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                      } catch (err: any) {
+                        handleError(err, () => {
+                          deleteFaculty(activeFaculty.id);
+                          setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                        });
+                      }
+                    }
+                  });
+                  setActiveMenuId(null);
+                }}
+              >
+                <Trash2 className="menu-icon" /> Remove
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingFaculty ? 'Edit Faculty' : 'Add New Faculty'}>
