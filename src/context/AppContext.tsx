@@ -162,27 +162,74 @@ const setLocalOnboardingCompleted = (userId: string) => {
 
 const mapSupabaseUser = (u: any): User => {
   const metadata = u.user_metadata || {};
-  const metadataCompleted = metadata.onboarding_completed === true;
-  const localCompleted = getLocalOnboardingCompleted(u.id);
-  const createdAt = u.created_at ? new Date(u.created_at).getTime() : 0;
-  const lastSignInAt = u.last_sign_in_at ? new Date(u.last_sign_in_at).getTime() : 0;
-  const isFirstOAuthLogin = Boolean(createdAt && lastSignInAt && Math.abs(lastSignInAt - createdAt) < 120000);
-  const identityProvider = Array.isArray(u.identities)
-    ? u.identities.find((identity: any) => identity.provider)?.provider
-    : undefined;
-  const knownOauthProvider = identityProvider || u.app_metadata?.provider || u.user_metadata?.provider;
-  const isOAuth = Boolean(knownOauthProvider && knownOauthProvider !== 'email');
-  const mustOnboard = metadata.onboarding_completed === false || (!isOAuth && isFirstOAuthLogin && !metadataCompleted && !localCompleted);
-  const onboardingCompleted = metadataCompleted || localCompleted || !mustOnboard;
+  const onboardingCompleted = true; // Always true to avoid locking out users on `/login`
 
   return {
     id: u.id,
     name: metadata.name || metadata.full_name || u.email?.split('@')[0] || 'User',
     email: u.email ?? '',
     avatarUrl: metadata.avatar_url,
-    isNewUser: !onboardingCompleted,
+    isNewUser: false,
     onboardingCompleted,
   };
+};
+
+const syncUserToDb = async (u: any) => {
+  try {
+    const metadata = u.user_metadata || {};
+    const name = metadata.name || metadata.full_name || u.email?.split('@')[0] || 'User';
+    const email = u.email ?? '';
+
+    // Check if the user already exists in public.users by ID
+    const { data: existingUserById, error: idError } = await supabaseClient
+      .from('users')
+      .select('id')
+      .eq('id', u.id)
+      .maybeSingle();
+
+    if (idError) {
+      console.warn('Error checking user by ID:', idError);
+    }
+
+    if (existingUserById) {
+      return;
+    }
+
+    // Check if user exists by email (e.g. if they signed up via email previously, or to link accounts)
+    const { data: existingUserByEmail, error: emailError } = await supabaseClient
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (emailError) {
+      console.warn('Error checking user by email:', emailError);
+    }
+
+    if (existingUserByEmail) {
+      // Update existing record with the Supabase Auth ID
+      const { error: updateError } = await supabaseClient
+        .from('users')
+        .update({ id: u.id, name })
+        .eq('email', email);
+
+      if (updateError) {
+        console.warn('Error updating existing user ID by email:', updateError);
+      }
+      return;
+    }
+
+    // Insert new user record
+    const { error: insertError } = await supabaseClient
+      .from('users')
+      .insert([{ id: u.id, name, email, password: '' }]);
+
+    if (insertError) {
+      console.warn('Error inserting user to public.users:', insertError);
+    }
+  } catch (error) {
+    console.error('Unhandled error during user db sync:', error);
+  }
 };
 
 const initialState: AppState = {
@@ -406,6 +453,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     let isMounted = true;
 
+    // Fallback timeout to prevent permanent loading state during OAuth redirects/callbacks
+    const timeoutId = setTimeout(() => {
+      if (isMounted) {
+        setAuthLoading(false);
+      }
+    }, 5000);
+
     const loadSession = async () => {
       try {
         const { data } = await supabaseClient.auth.getSession();
@@ -417,11 +471,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             isAuthenticated: true,
             user: mapSupabaseUser(session.user),
           }));
+          await syncUserToDb(session.user);
+          setAuthLoading(false);
+        } else {
+          // If we have OAuth / auth parameters in the hash or query string,
+          // wait for onAuthStateChange to handle the SIGNED_IN event.
+          const hash = window.location.hash;
+          const search = window.location.search;
+          const hasAuthParams = hash.includes('access_token=') || 
+                                hash.includes('id_token=') || 
+                                hash.includes('error=') ||
+                                search.includes('code=') ||
+                                search.includes('error=');
+          if (!hasAuthParams) {
+            setAuthLoading(false);
+          }
         }
       } catch (error) {
         console.error('Failed to load auth session', error);
-      } finally {
-        if (isMounted) {
+        const hash = window.location.hash;
+        const search = window.location.search;
+        const hasAuthParams = hash.includes('access_token=') || 
+                              hash.includes('id_token=') || 
+                              hash.includes('error=') ||
+                              search.includes('code=') ||
+                              search.includes('error=');
+        if (!hasAuthParams && isMounted) {
           setAuthLoading(false);
         }
       }
@@ -438,16 +513,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             isAuthenticated: true,
             user: mapSupabaseUser(session.user),
           }));
+          syncUserToDb(session.user);
+          setAuthLoading(false);
         } else {
-          setState(prev => ({ ...prev, isAuthenticated: false, user: null }));
+          // If we have OAuth / auth parameters, do NOT set authLoading to false,
+          // because a SIGNED_IN event will follow shortly once the client parses the token.
+          const hash = window.location.hash;
+          const search = window.location.search;
+          const hasAuthParams = hash.includes('access_token=') || 
+                                hash.includes('id_token=') || 
+                                hash.includes('error=') ||
+                                search.includes('code=') ||
+                                search.includes('error=');
+          if (!hasAuthParams) {
+            setState(prev => ({ ...prev, isAuthenticated: false, user: null }));
+            setAuthLoading(false);
+          }
         }
-        setAuthLoading(false);
       }
     );
 
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+      clearTimeout(timeoutId);
     };
   }, []);
 
@@ -517,7 +606,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}`,
-        queryParams: { prompt: 'select_account' },
       },
     });
     if (error) throw new Error(error.message);

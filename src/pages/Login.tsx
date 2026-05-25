@@ -9,7 +9,8 @@ import {
   Eye, 
   EyeOff, 
   Loader2,
-  User
+  User,
+  CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../context/AppContext';
@@ -97,10 +98,6 @@ export default function Login() {
     setOauthLoading(true);
     try {
       await loginWithGoogle();
-      // Redirect to dashboard after successful Google sign-in
-      setTimeout(() => {
-        navigate('/', { replace: true });
-      }, 500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in failed.');
       setOauthLoading(false);
