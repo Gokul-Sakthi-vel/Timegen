@@ -18,7 +18,7 @@ import { useApp } from '../context/AppContext';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, loginWithGoogle, signup, user, isAuthenticated } = useApp();
+  const { login, loginWithGoogle, signup, logout, user, isAuthenticated } = useApp();
 
   // Sign in state
   const [email, setEmail] = useState(() => {
@@ -107,7 +107,8 @@ export default function Login() {
     setSuccess('');
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      const trimmedEmail = email.trim().toLowerCase();
+      await login(trimmedEmail, password);
       navigate(from, { replace: true });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Invalid email or password';
@@ -142,23 +143,23 @@ export default function Login() {
     setSuccess('');
     setIsSubmitting(true);
     try {
-      const data = await signup(signupName, signupEmail, signupPassword);
-      if (data && !data.session) {
-        setSignupName('');
-        setSignupEmail('');
-        setSignupPassword('');
-        setConfirmPassword('');
-        setAcceptedTerms(false);
-        navigate('/login', { 
-          replace: true, 
-          state: { 
-            successMessage: 'Account created successfully! Please verify your email before logging in. A confirmation link has been sent to your email.',
-            email: signupEmail
-          } 
-        });
-      } else {
-        navigate(from === '/login' ? '/' : from, { replace: true });
+      const trimmedEmail = signupEmail.trim().toLowerCase();
+      const data = await signup(signupName, trimmedEmail, signupPassword);
+      if (data && data.session) {
+        await logout();
       }
+      setSignupName('');
+      setSignupEmail('');
+      setSignupPassword('');
+      setConfirmPassword('');
+      setAcceptedTerms(false);
+      navigate('/login', { 
+        replace: true, 
+        state: { 
+          successMessage: 'Account created successfully. You can now log in.',
+          email: trimmedEmail
+        } 
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Signup failed';
       if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
