@@ -466,10 +466,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const session = data.session;
         if (!isMounted) return;
         if (session?.user) {
+          const metadata = session.user.user_metadata || {};
+          const savedTheme = metadata.theme as 'light' | 'dark' | 'system' | undefined;
           setState(prev => ({
             ...prev,
             isAuthenticated: true,
             user: mapSupabaseUser(session.user),
+            theme: savedTheme || prev.theme,
           }));
           await syncUserToDb(session.user);
           setAuthLoading(false);
@@ -508,10 +511,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       (_event, session) => {
         if (!isMounted) return;
         if (session?.user) {
+          const metadata = session.user.user_metadata || {};
+          const savedTheme = metadata.theme as 'light' | 'dark' | 'system' | undefined;
           setState(prev => ({
             ...prev,
             isAuthenticated: true,
             user: mapSupabaseUser(session.user),
+            theme: savedTheme || prev.theme,
           }));
           syncUserToDb(session.user);
           setAuthLoading(false);
@@ -564,6 +570,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setTheme = (theme: 'light' | 'dark' | 'system') => {
     setState(prev => ({ ...prev, theme }));
+    if (state.isAuthenticated && state.user) {
+      supabaseClient.auth.updateUser({
+        data: { theme }
+      }).catch(err => {
+        console.warn('Could not save theme to user metadata:', err);
+      });
+    }
   };
 
   const updateSettings = (settings: CollegeSettings) => {

@@ -596,12 +596,12 @@ export default function Login() {
 
           <p style={{ textAlign: 'center', fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '16px 0 0' }}>
             Don't have an account?{' '}
-            <button 
-              onClick={() => setIsSignupMode(true)} 
-              style={{ background: 'none', border: 'none', fontWeight: 700, color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer', fontSize: 'inherit' }}
+            <Link 
+              to="/signup" 
+              style={{ fontWeight: 700, color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer', fontSize: 'inherit' }}
             >
               Create Account
-            </button>
+            </Link>
           </p>
         </div>
 
