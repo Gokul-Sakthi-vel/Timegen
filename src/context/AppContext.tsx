@@ -60,7 +60,7 @@ interface AppContextType extends AppState {
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
   updateProfile: (name: string, avatarUrl?: string) => Promise<void>;
-  sendEmailOtp: (email: string, mode?: 'signup' | 'email') => Promise<void>;
+  sendEmailOtp: (email: string, mode?: 'signup' | 'email', metadata?: Record<string, unknown>) => Promise<void>;
   verifyEmailOtp: (email: string, token: string, mode?: 'signup' | 'email') => Promise<void>;
   completeOnboarding: (name: string) => Promise<void>;
   authLoading: boolean;
@@ -986,18 +986,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const sendEmailOtp = async (email: string, mode: 'signup' | 'email' = 'email') => {
-    if (mode === 'signup') {
-      const { error } = await supabaseClient.auth.resend({
-        type: 'signup',
-        email,
-      });
-      if (!error) return;
-    }
-
+  const sendEmailOtp = async (email: string, mode: 'signup' | 'email' = 'email', metadata?: Record<string, unknown>) => {
     const { error } = await supabaseClient.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false },
+      options: {
+        shouldCreateUser: mode === 'signup',
+        data: metadata,
+      },
     });
     if (error) throw error;
   };

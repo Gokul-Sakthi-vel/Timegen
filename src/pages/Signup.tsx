@@ -9,9 +9,6 @@ import {
   AlertCircle, 
   Eye, 
   EyeOff, 
-  Check,
-  Shield,
-  Zap,
   Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,11 +17,12 @@ import { useApp } from '../context/AppContext';
 export default function Signup() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signup, loginWithGoogle, user, isAuthenticated, sendEmailOtp, verifyEmailOtp, completeOnboarding } = useApp();
+  const { loginWithGoogle, user, isAuthenticated, sendEmailOtp, verifyEmailOtp, updatePassword, completeOnboarding } = useApp();
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
   const [error, setError] = useState('');
@@ -37,9 +35,11 @@ export default function Signup() {
   const [otpVerified, setOtpVerified] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
   const setupMode = isAuthenticated && user?.onboardingCompleted === false;
+  const createPasswordMode = otpVerified && isAuthenticated;
   const setupEmail = setupMode ? user?.email || '' : pendingSignupEmail;
   const setupName = setupMode ? name || user?.name || '' : pendingSignupName || name;
   const needsOtpSection = setupMode || Boolean(pendingSignupEmail);
@@ -50,6 +50,9 @@ export default function Signup() {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errors.email = 'Please enter a valid email address';
     }
+    if (confirmPassword && password !== confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
     
     const rules = {
       length: password.length >= 8,
@@ -59,7 +62,7 @@ export default function Signup() {
     };
     
     return { errors, rules };
-  }, [email, password]);
+  }, [confirmPassword, email, password]);
 
   const passwordStrength = useMemo(() => {
     if (!password) return { label: '', score: 0, color: 'transparent' };
@@ -78,14 +81,18 @@ export default function Signup() {
     setError('');
     setIsSubmitting(true);
     try {
-      await signup(name, email, password);
-      await sendEmailOtp(email, 'signup');
+      await sendEmailOtp(email, 'signup', {
+        name,
+        full_name: name,
+        onboarding_completed: false,
+        is_new_user: true,
+      });
       setPendingSignupEmail(email);
       setPendingSignupName(name);
       setOtpSent(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Signup failed';
-      if (msg.includes('already registered')) {
+      if (msg.includes('already registered') || msg.includes('already exists')) {
         setError('This email is already registered. Try signing in.');
       } else {
         setError('Something went wrong. Please try again.');
@@ -117,7 +124,12 @@ export default function Signup() {
     setError('');
     setIsSendingOtp(true);
     try {
-      await sendEmailOtp(setupEmail, pendingSignupEmail ? 'signup' : 'email');
+      await sendEmailOtp(setupEmail, pendingSignupEmail ? 'signup' : 'email', pendingSignupEmail ? {
+        name: setupName,
+        full_name: setupName,
+        onboarding_completed: false,
+        is_new_user: true,
+      } : undefined);
       setOtpSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send verification code.');
@@ -142,10 +154,11 @@ export default function Signup() {
 
   const handleFinishSetup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!acceptedTerms || !otpVerified || !setupName.trim()) return;
+    if (!acceptedTerms || !otpVerified || !setupName.trim() || !password || password !== confirmPassword) return;
     setError('');
     setIsSubmitting(true);
     try {
+      await updatePassword(password);
       await completeOnboarding(setupName);
       navigate(from === '/signup' ? '/' : from, { replace: true });
     } catch (err) {
@@ -178,9 +191,9 @@ export default function Signup() {
             <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.04em', margin: '0 0 6px' }}>
               Create your account
             </h1>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-              Verify your email to continue to Timegen
-            </p>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+            {createPasswordMode ? 'Create a password to finish setup' : 'Verify your email to continue to Timegen'}
+          </p>
           </div>
 
           <form
@@ -226,35 +239,110 @@ export default function Signup() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                inputMode="numeric"
-                value={otp}
-                onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Enter OTP"
-                className="field-input"
-                style={{ flex: 1, borderRadius: 10, padding: '10px 14px', fontSize: '0.9rem', letterSpacing: '0.08em' }}
-              />
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={handleSendOtp}
-                disabled={isSendingOtp}
-                style={{ borderRadius: 10, whiteSpace: 'nowrap' }}
-              >
-                {isSendingOtp ? <Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> : otpSent ? 'Resend' : 'Send OTP'}
-              </button>
-            </div>
+            {!createPasswordMode && (
+              <>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    inputMode="numeric"
+                    value={otp}
+                    onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Enter OTP"
+                    className="field-input"
+                    style={{ flex: 1, borderRadius: 10, padding: '10px 14px', fontSize: '0.9rem', letterSpacing: '0.08em' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={handleSendOtp}
+                    disabled={isSendingOtp}
+                    style={{ borderRadius: 10, whiteSpace: 'nowrap' }}
+                  >
+                    {isSendingOtp ? <Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> : otpSent ? 'Resend' : 'Send OTP'}
+                  </button>
+                </div>
 
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={handleVerifyOtp}
-              disabled={!otp.trim() || isVerifyingOtp || otpVerified}
-              style={{ borderRadius: 10, justifyContent: 'center' }}
-            >
-              {isVerifyingOtp ? <><Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> Verifying...</> : otpVerified ? 'Email Verified' : 'Verify Email'}
-            </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleVerifyOtp}
+                  disabled={!otp.trim() || isVerifyingOtp || otpVerified}
+                  style={{ borderRadius: 10, justifyContent: 'center' }}
+                >
+                  {isVerifyingOtp ? <><Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> Verifying...</> : otpVerified ? 'Email Verified' : 'Verify Email'}
+                </button>
+              </>
+            )}
+
+            {createPasswordMode && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Create Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="Create a password"
+                      className="field-input"
+                      style={{ paddingLeft: 38, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+
+                  {password && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Strength</span>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: passwordStrength.color }}>{passwordStrength.label}</span>
+                      </div>
+                      <div style={{ height: 3, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden' }}>
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${passwordStrength.score}%`, backgroundColor: passwordStrength.color }}
+                          style={{ height: '100%' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Confirm Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      required
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm password"
+                      className="field-input"
+                      style={{ paddingLeft: 38, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem', borderColor: validation.errors.confirmPassword ? 'var(--danger-text)' : 'var(--border)' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                    >
+                      {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {validation.errors.confirmPassword && (
+                    <p style={{ fontSize: '0.7rem', color: 'var(--danger-text)', margin: '4px 0 0', fontWeight: 500 }}>
+                      {validation.errors.confirmPassword}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.45, cursor: 'pointer' }}>
               <input
@@ -283,7 +371,7 @@ export default function Signup() {
 
             <button
               type="submit"
-              disabled={!isAuthenticated || !otpVerified || !acceptedTerms || !setupName.trim() || isSubmitting}
+              disabled={!createPasswordMode || !acceptedTerms || !setupName.trim() || !password || password !== confirmPassword || isSubmitting}
               className="btn btn-primary"
               style={{ width: '100%', padding: '12px 20px', fontSize: '0.9rem', borderRadius: 10, marginTop: 4, justifyContent: 'center' }}
             >
@@ -431,69 +519,9 @@ export default function Signup() {
             </div>
 
             <div>
-              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Password</label>
-              <div style={{ position: 'relative' }}>
-                <Lock style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
-                <input
-                  type={showPassword ? "text" : "password"} 
-                  required value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Create a password"
-                  className="field-input" style={{ paddingLeft: 38, paddingRight: 40, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', color: 'var(--text-placeholder)', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center'
-                  }}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+              <div style={{ padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-secondary)', fontSize: '0.78rem', fontWeight: 600, lineHeight: 1.5 }}>
+                Password creation appears after email OTP verification.
               </div>
-
-              {password && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Strength</span>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: passwordStrength.color }}>{passwordStrength.label}</span>
-                  </div>
-                  <div style={{ height: 3, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden' }}>
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${passwordStrength.score}%`, backgroundColor: passwordStrength.color }}
-                      style={{ height: '100%' }}
-                    />
-                  </div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginTop: 8 }}>
-                    {[
-                      { label: '8+ Chars', met: validation.rules.length },
-                      { label: 'Upper', met: validation.rules.upper },
-                      { label: 'Num', met: validation.rules.number },
-                      { label: 'Symbol', met: validation.rules.special },
-                    ].map(rule => (
-                      <div key={rule.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <div style={{ 
-                          width: 12, height: 12, borderRadius: 99, 
-                          background: rule.met ? 'var(--success-bg)' : 'var(--surface-2)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 0.2s'
-                        }}>
-                          {rule.met && <Check size={8} color={rule.met ? 'var(--success-text)' : 'transparent'} />}
-                        </div>
-                        <span style={{ 
-                          fontSize: '0.65rem', 
-                          color: rule.met ? 'var(--text-primary)' : 'var(--text-placeholder)',
-                          fontWeight: rule.met ? 600 : 400
-                        }}>{rule.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             <AnimatePresence>
@@ -524,10 +552,10 @@ export default function Signup() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="animate-spin" style={{ width: 18, height: 18 }} />
-                  Creating...
+                  Sending OTP...
                 </>
               ) : (
-                <>Continue <ArrowRight style={{ width: 16, height: 16 }} /></>
+                <>Send OTP <ArrowRight style={{ width: 16, height: 16 }} /></>
               )}
             </motion.button>
           </form>
