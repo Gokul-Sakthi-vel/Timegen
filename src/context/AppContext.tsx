@@ -60,6 +60,7 @@ interface AppContextType extends AppState {
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
   updateProfile: (name: string, avatarUrl?: string) => Promise<void>;
+  completeOnboarding: (name: string) => Promise<void>;
   authLoading: boolean;
 
   notification: NotificationData | null;
@@ -72,6 +73,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const STORAGE_KEY = 'timetable_ai_data_v6';
 const STORAGE_KEY_LEGACY = 'timetable_ai_data_v5';
 const STORAGE_KEY_LEGACY2 = 'timetable_ai_data_v4';
+const ONBOARDING_STORAGE_PREFIX = 'timegen_onboarding_completed_';
 const API_BASE_URL = 'https://timegen-8zc7.onrender.com';
 
 type ApiSubject = {
@@ -147,6 +149,34 @@ const mapSubjectFromApi = (subject: ApiSubject): Subject => ({
     ? (subject.subject_type as SubjectType)
     : 'Theory',
 });
+
+const getLocalOnboardingCompleted = (userId: string) => (
+  localStorage.getItem(`${ONBOARDING_STORAGE_PREFIX}${userId}`) === 'true'
+);
+
+const setLocalOnboardingCompleted = (userId: string) => {
+  localStorage.setItem(`${ONBOARDING_STORAGE_PREFIX}${userId}`, 'true');
+};
+
+const mapSupabaseUser = (u: any): User => {
+  const metadata = u.user_metadata || {};
+  const metadataCompleted = metadata.onboarding_completed === true;
+  const localCompleted = getLocalOnboardingCompleted(u.id);
+  const createdAt = u.created_at ? new Date(u.created_at).getTime() : 0;
+  const lastSignInAt = u.last_sign_in_at ? new Date(u.last_sign_in_at).getTime() : 0;
+  const isFirstOAuthLogin = Boolean(createdAt && lastSignInAt && Math.abs(lastSignInAt - createdAt) < 120000);
+  const mustOnboard = metadata.onboarding_completed === false || (isFirstOAuthLogin && !metadataCompleted && !localCompleted);
+  const onboardingCompleted = metadataCompleted || localCompleted || !mustOnboard;
+
+  return {
+    id: u.id,
+    name: metadata.name || metadata.full_name || u.email?.split('@')[0] || 'User',
+    email: u.email ?? '',
+    avatarUrl: metadata.avatar_url,
+    isNewUser: !onboardingCompleted,
+    onboardingCompleted,
+  };
+};
 
 const initialState: AppState = {
   subjects: [],
@@ -375,15 +405,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const session = data.session;
         if (!isMounted) return;
         if (session?.user) {
-          const u = session.user;
           setState(prev => ({
             ...prev,
             isAuthenticated: true,
-            user: {
-              id: u.id,
-              name: u.user_metadata?.name || u.user_metadata?.full_name || u.email?.split('@')[0] || 'User',
-              email: u.email ?? '',
-            },
+            user: mapSupabaseUser(session.user),
           }));
         }
       } catch (error) {
@@ -401,15 +426,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       (_event, session) => {
         if (!isMounted) return;
         if (session?.user) {
-          const u = session.user;
           setState(prev => ({
             ...prev,
             isAuthenticated: true,
-            user: {
-              id: u.id,
-              name: u.user_metadata?.name || u.user_metadata?.full_name || u.email?.split('@')[0] || 'User',
-              email: u.email ?? '',
-            },
+            user: mapSupabaseUser(session.user),
           }));
         } else {
           setState(prev => ({ ...prev, isAuthenticated: false, user: null }));
@@ -436,6 +456,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state.theme]);
 
+  useEffect(() => {
+    if (!state.user || state.user.onboardingCompleted !== false) return;
+
+    supabaseClient.auth.updateUser({
+      data: { onboarding_completed: false, is_new_user: true }
+    }).catch(error => {
+      console.warn('Could not persist onboarding requirement', error);
+    });
+  }, [state.user?.id, state.user?.onboardingCompleted]);
+
   const setTheme = (theme: 'light' | 'dark' | 'system') => {
     setState(prev => ({ ...prev, theme }));
   };
@@ -456,11 +486,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setState(prev => ({
         ...prev,
         isAuthenticated: true,
-        user: {
-          id: data.user!.id,
-          name: data.user!.user_metadata?.name || data.user!.user_metadata?.full_name || data.user!.email?.split('@')[0] || 'User',
-          email: data.user!.email!,
-        },
+        user: mapSupabaseUser(data.user),
       }));
     }
   };
@@ -470,7 +496,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        data: { name },
+        data: { name, onboarding_completed: false, is_new_user: true },
         emailRedirectTo: `${window.location.origin}/login`,
       },
     });
@@ -958,6 +984,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  const completeOnboarding = async (name: string) => {
+    if (!state.user) return;
+
+    const trimmedName = name.trim() || state.user.name;
+    const { error: authError } = await supabaseClient.auth.updateUser({
+      data: {
+        name: trimmedName,
+        full_name: trimmedName,
+        onboarding_completed: true,
+        is_new_user: false,
+      }
+    });
+    if (authError) throw authError;
+
+    setLocalOnboardingCompleted(state.user.id);
+
+    const { error: dbError } = await supabaseClient
+      .from('users')
+      .update({ name: trimmedName })
+      .eq('email', state.user.email);
+
+    if (dbError) {
+      const { error: insertError } = await supabaseClient
+        .from('users')
+        .insert([{ name: trimmedName, email: state.user.email }]);
+
+      if (insertError) {
+        console.warn('Could not sync onboarding profile with public.users table', insertError);
+      }
+    }
+
+    setState(prev => ({
+      ...prev,
+      user: prev.user ? {
+        ...prev.user,
+        name: trimmedName,
+        isNewUser: false,
+        onboardingCompleted: true,
+      } : null
+    }));
+  };
+
   return (
     <AppContext.Provider value={{
       ...state,
@@ -969,7 +1037,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       generateTimetable, updateTimetable, deleteTimetable,
       updateSettings, restoreSettingsDefaults, setTheme,
       importData, resetData,
-      login, loginWithGoogle, signup, logout, resetPassword, updatePassword, updateProfile,
+      login, loginWithGoogle, signup, logout, resetPassword, updatePassword, updateProfile, completeOnboarding,
       authLoading,
       notification, showNotification, clearNotification
     }}>

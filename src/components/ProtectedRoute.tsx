@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, authLoading } = useApp();
+  const { isAuthenticated, authLoading, user } = useApp();
   const location = useLocation();
 
   if (authLoading) {
@@ -20,6 +20,10 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (user?.onboardingCompleted === false && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;
