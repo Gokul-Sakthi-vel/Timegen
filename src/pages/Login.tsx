@@ -21,7 +21,10 @@ export default function Login() {
   const { login, loginWithGoogle, signup, user, isAuthenticated } = useApp();
 
   // Sign in state
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => {
+    const locState = location.state as { email?: string } | null;
+    return locState?.email || '';
+  });
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -37,6 +40,10 @@ export default function Login() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(() => {
+    const locState = location.state as { successMessage?: string } | null;
+    return locState?.successMessage || '';
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
 
@@ -51,7 +58,18 @@ export default function Login() {
 
   useEffect(() => {
     setIsSignupMode(location.pathname === '/signup');
-  }, [location.pathname]);
+    setError('');
+    
+    const locState = location.state as { successMessage?: string; email?: string } | null;
+    if (locState?.successMessage) {
+      setSuccess(locState.successMessage);
+    } else {
+      setSuccess('');
+    }
+    if (locState?.email) {
+      setEmail(locState.email);
+    }
+  }, [location.pathname, location.state]);
 
   const validation = useMemo(() => {
     const errors: Record<string, string> = {};
@@ -86,12 +104,20 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setIsSubmitting(true);
     try {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid email or password');
+      const errMsg = err instanceof Error ? err.message : 'Invalid email or password';
+      if (errMsg.toLowerCase().includes('email not confirmed') || errMsg.toLowerCase().includes('email not verified')) {
+        setError('Please verify your email before logging in. A confirmation link has been sent to your email.');
+      } else if (errMsg.toLowerCase().includes('invalid login credentials') || errMsg.toLowerCase().includes('invalid credentials')) {
+        setError('Invalid email or password');
+      } else {
+        setError(errMsg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -113,16 +139,32 @@ export default function Login() {
     if (Object.keys(validation.errors).length > 0 || !acceptedTerms) return;
     
     setError('');
+    setSuccess('');
     setIsSubmitting(true);
     try {
-      await signup(signupName, signupEmail, signupPassword);
-      navigate(from === '/login' ? '/' : from, { replace: true });
+      const data = await signup(signupName, signupEmail, signupPassword);
+      if (data && !data.session) {
+        setSignupName('');
+        setSignupEmail('');
+        setSignupPassword('');
+        setConfirmPassword('');
+        setAcceptedTerms(false);
+        navigate('/login', { 
+          replace: true, 
+          state: { 
+            successMessage: 'Account created successfully! Please verify your email before logging in. A confirmation link has been sent to your email.',
+            email: signupEmail
+          } 
+        });
+      } else {
+        navigate(from === '/login' ? '/' : from, { replace: true });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Signup failed';
-      if (msg.includes('already registered') || msg.includes('already exists')) {
+      if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
         setError('This email is already registered. Try signing in.');
       } else {
-        setError('Something went wrong. Please try again.');
+        setError(msg);
       }
     } finally {
       setIsSubmitting(false);
@@ -363,6 +405,19 @@ export default function Login() {
                 )}
               </AnimatePresence>
 
+              <AnimatePresence>
+                {success && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'rgba(16, 185, 129, 0.1)', border: '1.5px solid rgba(16, 185, 129, 0.2)' }}
+                  >
+                    <CheckCircle2 style={{ width: 16, height: 16, color: '#10b981', flexShrink: 0 }} />
+                    <p style={{ fontSize: '0.8rem', color: '#10b981', margin: 0, fontWeight: 500 }}>{success}</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <motion.button
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
@@ -575,6 +630,23 @@ export default function Login() {
                 >
                   <AlertCircle style={{ width: 16, height: 16, color: 'var(--danger-text)', flexShrink: 0 }} />
                   <p style={{ fontSize: '0.8rem', color: 'var(--danger-text)', margin: 0, fontWeight: 500 }}>{error}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {success && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '10px 12px', borderRadius: 10,
+                    background: 'rgba(16, 185, 129, 0.1)', border: '1.5px solid rgba(16, 185, 129, 0.2)',
+                  }}
+                >
+                  <CheckCircle2 style={{ width: 16, height: 16, color: '#10b981', flexShrink: 0 }} />
+                  <p style={{ fontSize: '0.8rem', color: '#10b981', margin: 0, fontWeight: 500 }}>{success}</p>
                 </motion.div>
               )}
             </AnimatePresence>

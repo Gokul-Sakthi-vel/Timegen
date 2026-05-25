@@ -55,7 +55,7 @@ interface AppContextType extends AppState {
 
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
-  signup: (name: string, email: string, password: string) => Promise<void>;
+  signup: (name: string, email: string, password: string) => Promise<any>;
   logout: () => void;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -612,6 +612,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     if (error) throw error;
     if (!data.user) throw new Error('Signup failed');
+    return data;
   };
 
   const loginWithGoogle = async () => {
