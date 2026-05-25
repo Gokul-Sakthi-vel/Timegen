@@ -26,7 +26,7 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(false);
   
   // Sign up state
-  const [isSignupMode, setIsSignupMode] = useState(false);
+  const [isSignupMode, setIsSignupMode] = useState(location.pathname === '/signup');
   const [signupName, setSignupName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
