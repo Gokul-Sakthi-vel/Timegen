@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Badge, EmptyState, Modal, BulkActionBar, ConfirmModal, ErrorModal, Select } from '../components/UI';
 import { Users, Plus, Edit2, Trash2, Mail, Phone, MessageCircle, MoreVertical, Check, Square, CheckSquare, Search, BookOpen, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,6 +24,7 @@ export default function Faculty() {
   const [subjectFilter, setSubjectFilter] = useState('all');
   const menuButtonRefs = useRef<{ [key: string]: HTMLButtonElement }>({});
   const [dropdownPositions, setDropdownPositions] = useState<{ [key: string]: 'above' | 'below' }>({});
+  const [dropdownCoords, setDropdownCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     onConfirm: () => void;
@@ -93,7 +95,7 @@ export default function Faculty() {
       }
     };
     const handleClickOutside = (e: MouseEvent) => {
-      if (activeMenuId && !(e.target as HTMLElement).closest('.faculty-menu-container')) {
+      if (activeMenuId && !(e.target as HTMLElement).closest('.faculty-menu-container, .faculty-card-dropdown')) {
         setActiveMenuId(null);
       }
     };
@@ -119,15 +121,42 @@ export default function Faculty() {
     return spaceBelow < dropdownHeight ? 'above' : 'below';
   };
 
+  const updateDropdownCoords = (facultyId: string, position = getDropdownPosition(facultyId)) => {
+    const button = menuButtonRefs.current[facultyId];
+    if (!button) return;
+
+    const rect = button.getBoundingClientRect();
+    const dropdownWidth = 170;
+    const dropdownHeight = 180;
+    const gap = 6;
+    const left = Math.min(Math.max(rect.right - dropdownWidth, 8), window.innerWidth - dropdownWidth - 8);
+    const top = position === 'above' ? rect.top - dropdownHeight - gap : rect.bottom + gap;
+
+    setDropdownCoords({ top: Math.max(top, 8), left });
+  };
+
   const handleMenuToggle = (facultyId: string) => {
     if (activeMenuId === facultyId) {
       setActiveMenuId(null);
     } else {
       const position = getDropdownPosition(facultyId);
       setDropdownPositions(prev => ({ ...prev, [facultyId]: position }));
+      updateDropdownCoords(facultyId, position);
       setActiveMenuId(facultyId);
     }
   };
+
+  useEffect(() => {
+    if (!activeMenuId) return;
+
+    const syncDropdown = () => updateDropdownCoords(activeMenuId);
+    window.addEventListener('resize', syncDropdown);
+    window.addEventListener('scroll', syncDropdown, true);
+    return () => {
+      window.removeEventListener('resize', syncDropdown);
+      window.removeEventListener('scroll', syncDropdown, true);
+    };
+  }, [activeMenuId]);
 
   const handleBulkDelete = async () => {
     setDeleteConfirm({
@@ -336,7 +365,7 @@ export default function Faculty() {
                   </button>
 
                   <AnimatePresence>
-                    {activeMenuId === f.id && (
+                    {activeMenuId === f.id && typeof document !== 'undefined' && createPortal(
                       <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -344,15 +373,13 @@ export default function Faculty() {
                         transition={{ duration: 0.15, ease: 'easeOut' }}
                         className="faculty-card-dropdown"
                         style={{
-                          position: 'absolute',
-                          [dropdownPositions[f.id] === 'above' ? 'bottom' : 'top']: dropdownPositions[f.id] === 'above' ? '100%' : '100%',
-                          right: 0,
+                          position: 'fixed',
+                          top: dropdownCoords.top,
+                          left: dropdownCoords.left,
                           width: 170, background: 'var(--surface)',
                           border: '1.5px solid var(--border)', borderRadius: 14,
                           boxShadow: '0 12px 35px rgba(0,0,0,0.15)',
-                          padding: 6, zIndex: 10000,
-                          marginTop: dropdownPositions[f.id] === 'below' ? 6 : 0,
-                          marginBottom: dropdownPositions[f.id] === 'above' ? 6 : 0,
+                          padding: 6, zIndex: 9999,
                           overflow: 'visible', pointerEvents: 'auto'
                         }}
                         onClick={e => e.stopPropagation()}
@@ -412,7 +439,8 @@ export default function Faculty() {
                         >
                           <Trash2 className="menu-icon" /> Remove
                         </button>
-                      </motion.div>
+                      </motion.div>,
+                      document.body
                     )}
                   </AnimatePresence>
                 </div>
