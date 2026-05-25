@@ -175,26 +175,99 @@ export default function ScheduleView() {
     setHasChanges(false);
   };
 
+  const getExportBackground = () => {
+    const color = getComputedStyle(document.documentElement).getPropertyValue('--timetable-bg').trim();
+    return color || '#ffffff';
+  };
+
+  const copyComputedStyles = (source: Element, target: Element) => {
+    const computed = window.getComputedStyle(source);
+    for (let i = 0; i < computed.length; i++) {
+      const property = computed[i];
+      (target as HTMLElement).style.setProperty(property, computed.getPropertyValue(property), computed.getPropertyPriority(property));
+    }
+
+    Array.from(source.children).forEach((sourceChild, index) => {
+      const targetChild = target.children[index];
+      if (targetChild) copyComputedStyles(sourceChild, targetChild);
+    });
+  };
+
+  const renderExportCanvas = async (element: HTMLElement) => {
+    await document.fonts?.ready;
+
+    const width = Math.ceil(element.scrollWidth);
+    const height = Math.ceil(element.scrollHeight);
+    const clone = element.cloneNode(true) as HTMLElement;
+    copyComputedStyles(element, clone);
+
+    clone.style.width = `${width}px`;
+    clone.style.height = `${height}px`;
+    clone.style.transform = 'none';
+    clone.style.position = 'relative';
+    clone.style.left = '0';
+    clone.style.top = '0';
+
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    wrapper.style.width = `${width}px`;
+    wrapper.style.height = `${height}px`;
+    wrapper.style.background = getExportBackground();
+    wrapper.appendChild(clone);
+
+    const serialized = new XMLSerializer().serializeToString(wrapper);
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <foreignObject width="100%" height="100%">${serialized}</foreignObject>
+      </svg>
+    `;
+    const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+
+    try {
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = svgUrl;
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error('Could not render timetable export image.'));
+      });
+      if (image.decode) await image.decode().catch(() => undefined);
+
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(window.devicePixelRatio || 2, 2);
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not create export canvas.');
+      ctx.scale(scale, scale);
+      ctx.fillStyle = getExportBackground();
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+      return canvas;
+    } finally {
+      URL.revokeObjectURL(svgUrl);
+    }
+  };
+
+  const downloadDataUrl = (dataUrl: string, filename: string) => {
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = dataUrl;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
   const handleDownload = async () => {
     const element = document.getElementById("timetable-export");
     if (!element) return;
     setIsDownloading(true);
     try {
-      const html2canvas = (await import('html2canvas')).default;
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: 'var(--timetable-bg)',
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight
-      });
-      const link = document.createElement('a');
-      link.download = `${timetable.name}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      const canvas = await renderExportCanvas(element);
+      downloadDataUrl(canvas.toDataURL('image/png'), `${timetable.name}.png`);
     } catch (err) {
       console.error('Image Export Failed:', err);
+      handleError(err, handleDownload);
     } finally {
       setIsDownloading(false);
     }
@@ -206,17 +279,8 @@ export default function ScheduleView() {
     setIsDownloadingPDF(true);
 
     try {
-      const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
-      
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: 'var(--timetable-bg)',
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight
-      });
+      const canvas = await renderExportCanvas(element);
 
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("l", "mm", "a4");
@@ -243,6 +307,7 @@ export default function ScheduleView() {
       pdf.save(`${timetable.name}.pdf`);
     } catch (err) {
       console.error('PDF generation failed:', err);
+      handleError(err, handleDownloadPDF);
     } finally {
       setIsDownloadingPDF(false);
     }
