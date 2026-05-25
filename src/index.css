@@ -668,6 +668,13 @@
   color: inherit;
 }
 
+/* ── Faculty Grid ──────────────────────────────────────────────────────────── */
+.faculty-grid {
+  display: grid;
+  gap: 16px;
+  overflow: visible;
+}
+
 /* ── Dark-mode active nav icon color fix ───────────────────────────────────── */
 :root.dark .nav-link-item[class*="active"] svg {
   color: #F2C94C !important;

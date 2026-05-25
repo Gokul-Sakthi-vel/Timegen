@@ -21,6 +21,8 @@ export default function Faculty() {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
+  const menuButtonRefs = useRef<{ [key: string]: HTMLButtonElement }>({});
+  const [dropdownPositions, setDropdownPositions] = useState<{ [key: string]: 'above' | 'below' }>({});
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     onConfirm: () => void;
@@ -106,6 +108,26 @@ export default function Faculty() {
   const handleAdd = () => { setEditingFaculty(null); setIsModalOpen(true); };
   const handleEdit = (f: FacultyMember) => { setEditingFaculty(f); setIsModalOpen(true); };
 
+  const getDropdownPosition = (facultyId: string) => {
+    const button = menuButtonRefs.current[facultyId];
+    if (!button) return 'below';
+    
+    const rect = button.getBoundingClientRect();
+    const dropdownHeight = 180; // approximate dropdown height
+    const spaceBelow = window.innerHeight - rect.bottom;
+    
+    return spaceBelow < dropdownHeight ? 'above' : 'below';
+  };
+
+  const handleMenuToggle = (facultyId: string) => {
+    if (activeMenuId === facultyId) {
+      setActiveMenuId(null);
+    } else {
+      const position = getDropdownPosition(facultyId);
+      setDropdownPositions(prev => ({ ...prev, [facultyId]: position }));
+      setActiveMenuId(facultyId);
+    }
+  };
 
   const handleBulkDelete = async () => {
     setDeleteConfirm({
@@ -235,7 +257,6 @@ export default function Faculty() {
           {filteredFaculty.map(f => (
             <motion.div
               key={f.id}
-              layout
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ y: -4, boxShadow: 'var(--shadow-elevated)', borderColor: 'var(--border-2)' }}
@@ -294,16 +315,20 @@ export default function Faculty() {
                     </div>
                   </div>
                 </div>
-                <div className="faculty-menu-container" style={{ position: 'relative', overflow: 'visible', zIndex: 0 }}>
+                <div className="faculty-menu-container" style={{ position: 'relative', overflow: 'visible', zIndex: 9999 }}>
                   <button
+                    ref={(el) => {
+                      if (el) menuButtonRefs.current[f.id] = el;
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setActiveMenuId(activeMenuId === f.id ? null : f.id);
+                      handleMenuToggle(f.id);
                     }}
                     style={{
                       background: 'none', border: 'none', color: 'var(--text-secondary)',
                       cursor: 'pointer', padding: 6, borderRadius: 8,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      position: 'relative', zIndex: 1
                     }}
                   >
                     <MoreVertical style={{ width: 20, height: 20 }} />
@@ -318,13 +343,16 @@ export default function Faculty() {
                         transition={{ duration: 0.15, ease: 'easeOut' }}
                         className="faculty-card-dropdown"
                         style={{
-                          position: 'absolute', top: '100%', right: 0,
+                          position: 'absolute',
+                          [dropdownPositions[f.id] === 'above' ? 'bottom' : 'top']: dropdownPositions[f.id] === 'above' ? '100%' : '100%',
+                          right: 0,
                           width: 170, background: 'var(--surface)',
                           border: '1.5px solid var(--border)', borderRadius: 14,
                           boxShadow: '0 12px 35px rgba(0,0,0,0.15)',
-                          padding: 6, zIndex: 110,
-                          marginTop: 6,
-                          overflow: 'visible'
+                          padding: 6, zIndex: 10000,
+                          marginTop: dropdownPositions[f.id] === 'below' ? 6 : 0,
+                          marginBottom: dropdownPositions[f.id] === 'above' ? 6 : 0,
+                          overflow: 'visible', pointerEvents: 'auto'
                         }}
                         onClick={e => e.stopPropagation()}
                       >
