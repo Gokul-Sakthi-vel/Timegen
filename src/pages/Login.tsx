@@ -49,6 +49,10 @@ export default function Login() {
     }
   }, [isAuthenticated, user?.onboardingCompleted, navigate]);
 
+  useEffect(() => {
+    setIsSignupMode(location.pathname === '/signup');
+  }, [location.pathname]);
+
   const validation = useMemo(() => {
     const errors: Record<string, string> = {};
     
@@ -380,9 +384,9 @@ export default function Login() {
 
             <p style={{ textAlign: 'center', fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '16px 0 0' }}>
               Already have an account?{' '}
-              <button onClick={handleBackToLogin} style={{ background: 'none', border: 'none', fontWeight: 700, color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer', fontSize: 'inherit' }}>
+              <Link to="/login" style={{ fontWeight: 700, color: 'var(--accent)', textDecoration: 'none', cursor: 'pointer', fontSize: 'inherit' }}>
                 Sign In
-              </button>
+              </Link>
             </p>
           </div>
 
