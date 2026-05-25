@@ -60,6 +60,8 @@ interface AppContextType extends AppState {
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
   updateProfile: (name: string, avatarUrl?: string) => Promise<void>;
+  sendEmailOtp: (email: string, mode?: 'signup' | 'email') => Promise<void>;
+  verifyEmailOtp: (email: string, token: string, mode?: 'signup' | 'email') => Promise<void>;
   completeOnboarding: (name: string) => Promise<void>;
   authLoading: boolean;
 
@@ -984,6 +986,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  const sendEmailOtp = async (email: string, mode: 'signup' | 'email' = 'email') => {
+    if (mode === 'signup') {
+      const { error } = await supabaseClient.auth.resend({
+        type: 'signup',
+        email,
+      });
+      if (!error) return;
+    }
+
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false },
+    });
+    if (error) throw error;
+  };
+
+  const verifyEmailOtp = async (email: string, token: string, mode: 'signup' | 'email' = 'email') => {
+    const normalizedToken = token.trim();
+    const { error } = await supabaseClient.auth.verifyOtp({
+      email,
+      token: normalizedToken,
+      type: mode,
+    });
+
+    if (!error) return;
+
+    if (mode === 'signup' || mode === 'email') {
+      const emailFallback = await supabaseClient.auth.verifyOtp({
+        email,
+        token: normalizedToken,
+        type: 'email',
+      });
+      if (!emailFallback.error) return;
+
+      const magicLinkFallback = await supabaseClient.auth.verifyOtp({
+        email,
+        token: normalizedToken,
+        type: 'magiclink',
+      });
+      if (!magicLinkFallback.error) return;
+    }
+
+    throw error;
+  };
+
   const completeOnboarding = async (name: string) => {
     if (!state.user) return;
 
@@ -1037,7 +1084,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       generateTimetable, updateTimetable, deleteTimetable,
       updateSettings, restoreSettingsDefaults, setTheme,
       importData, resetData,
-      login, loginWithGoogle, signup, logout, resetPassword, updatePassword, updateProfile, completeOnboarding,
+      login, loginWithGoogle, signup, logout, resetPassword, updatePassword, updateProfile, sendEmailOtp, verifyEmailOtp, completeOnboarding,
       authLoading,
       notification, showNotification, clearNotification
     }}>

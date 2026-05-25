@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Calendar, 
   Mail, 
@@ -19,7 +19,8 @@ import { useApp } from '../context/AppContext';
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { signup, loginWithGoogle } = useApp();
+  const location = useLocation();
+  const { signup, loginWithGoogle, user, isAuthenticated, sendEmailOtp, verifyEmailOtp, completeOnboarding } = useApp();
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -28,6 +29,20 @@ export default function Signup() {
   
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingSignupEmail, setPendingSignupEmail] = useState('');
+  const [pendingSignupName, setPendingSignupName] = useState('');
+  const [otp, setOtp] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
+  const setupMode = isAuthenticated && user?.onboardingCompleted === false;
+  const setupEmail = setupMode ? user?.email || '' : pendingSignupEmail;
+  const setupName = setupMode ? name || user?.name || '' : pendingSignupName || name;
+  const needsOtpSection = setupMode || Boolean(pendingSignupEmail);
 
   const validation = useMemo(() => {
     const errors: Record<string, string> = {};
@@ -64,7 +79,10 @@ export default function Signup() {
     setIsSubmitting(true);
     try {
       await signup(name, email, password);
-      navigate('/login', { replace: true });
+      await sendEmailOtp(email, 'signup');
+      setPendingSignupEmail(email);
+      setPendingSignupName(name);
+      setOtpSent(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Signup failed';
       if (msg.includes('already registered')) {
@@ -76,6 +94,216 @@ export default function Signup() {
       setIsSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (setupMode) {
+      setName(user?.name || '');
+      return;
+    }
+
+    if (isAuthenticated && user?.onboardingCompleted !== false) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate, setupMode, user?.name, user?.onboardingCompleted]);
+
+  useEffect(() => {
+    if (pendingSignupEmail && setupMode) {
+      setPendingSignupEmail('');
+    }
+  }, [pendingSignupEmail, setupMode]);
+
+  const handleSendOtp = async () => {
+    if (!setupEmail) return;
+    setError('');
+    setIsSendingOtp(true);
+    try {
+      await sendEmailOtp(setupEmail, pendingSignupEmail ? 'signup' : 'email');
+      setOtpSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send verification code.');
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!setupEmail || !otp.trim()) return;
+    setError('');
+    setIsVerifyingOtp(true);
+    try {
+      await verifyEmailOtp(setupEmail, otp, pendingSignupEmail ? 'signup' : 'email');
+      setOtpVerified(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid verification code.');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleFinishSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!acceptedTerms || !otpVerified || !setupName.trim()) return;
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await completeOnboarding(setupName);
+      navigate(from === '/signup' ? '/' : from, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not finish account setup.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (needsOtpSection) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'var(--bg)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px 16px',
+      }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          style={{ width: '100%', maxWidth: 440 }}
+        >
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <div className="logo-badge" style={{ width: 44, height: 44, borderRadius: 12, margin: '0 auto 12px' }}>
+              <Calendar style={{ width: 22, height: 22 }} />
+            </div>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.04em', margin: '0 0 6px' }}>
+              Create your account
+            </h1>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+              Verify your email to continue to Timegen
+            </p>
+          </div>
+
+          <form
+            onSubmit={handleFinishSetup}
+            style={{
+              background: 'var(--surface)',
+              border: '1.5px solid var(--border)',
+              borderRadius: 20,
+              padding: '24px 28px',
+              boxShadow: 'var(--shadow-modal)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            <div>
+              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Full Name</label>
+              <div style={{ position: 'relative' }}>
+                <User style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
+                <input
+                  type="text"
+                  required
+                  value={setupMode ? name : setupName}
+                  onChange={e => setupMode ? setName(e.target.value) : setPendingSignupName(e.target.value)}
+                  placeholder="Enter your full name"
+                  className="field-input"
+                  style={{ paddingLeft: 38, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="field-label" style={{ marginBottom: 4, fontSize: '0.7rem' }}>Verified Email</label>
+              <div style={{ position: 'relative' }}>
+                <Mail style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 15, height: 15, color: 'var(--text-placeholder)' }} />
+                <input
+                  type="email"
+                  value={setupEmail}
+                  disabled
+                  className="field-input"
+                  style={{ paddingLeft: 38, borderRadius: 10, padding: '10px 14px 10px 38px', fontSize: '0.9rem', opacity: 0.75 }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                inputMode="numeric"
+                value={otp}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Enter OTP"
+                className="field-input"
+                style={{ flex: 1, borderRadius: 10, padding: '10px 14px', fontSize: '0.9rem', letterSpacing: '0.08em' }}
+              />
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handleSendOtp}
+                disabled={isSendingOtp}
+                style={{ borderRadius: 10, whiteSpace: 'nowrap' }}
+              >
+                {isSendingOtp ? <Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> : otpSent ? 'Resend' : 'Send OTP'}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={handleVerifyOtp}
+              disabled={!otp.trim() || isVerifyingOtp || otpVerified}
+              style={{ borderRadius: 10, justifyContent: 'center' }}
+            >
+              {isVerifyingOtp ? <><Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> Verifying...</> : otpVerified ? 'Email Verified' : 'Verify Email'}
+            </button>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.45, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={e => setAcceptedTerms(e.target.checked)}
+                style={{ marginTop: 2, accentColor: 'var(--accent)' }}
+              />
+              <span>
+                I agree to the <Link to="/terms" style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Terms</Link> and <Link to="/privacy" style={{ color: 'var(--accent-text)', fontWeight: 700 }}>Privacy Policy</Link>.
+              </span>
+            </label>
+
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--danger-bg)', border: '1.5px solid var(--danger-border)' }}
+                >
+                  <AlertCircle style={{ width: 16, height: 16, color: 'var(--danger-text)', flexShrink: 0 }} />
+                  <p style={{ fontSize: '0.8rem', color: 'var(--danger-text)', margin: 0, fontWeight: 500 }}>{error}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <button
+              type="submit"
+              disabled={!isAuthenticated || !otpVerified || !acceptedTerms || !setupName.trim() || isSubmitting}
+              className="btn btn-primary"
+              style={{ width: '100%', padding: '12px 20px', fontSize: '0.9rem', borderRadius: 10, marginTop: 4, justifyContent: 'center' }}
+            >
+              {isSubmitting ? <><Loader2 className="animate-spin" style={{ width: 18, height: 18 }} /> Creating...</> : <>Proceed to Dashboard <ArrowRight style={{ width: 16, height: 16 }} /></>}
+            </button>
+          </form>
+        </motion.div>
+
+        <style>{`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          .animate-spin {
+            animation: spin 1s linear infinite;
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div style={{
